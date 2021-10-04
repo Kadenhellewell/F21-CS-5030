@@ -9,7 +9,6 @@ int bin_count;
 float min_meas;
 float max_meas;
 int data_count;
-int bin_size = ceil((double) (max_meas - min_meas) / (double) bin_count);
 
 void sort_num(float num)
 {
@@ -33,7 +32,11 @@ float get_random()
 }
 
 // description here of what order things are passed in
-// for now, first arg is number of bin_size, second is data_size of array, third is number of threads
+// 1. thread count
+// 2. bin count
+// 3. min
+// 4. max
+// 5. data count
 int main(int argc, char* argv[])
 {
     srand(100);
