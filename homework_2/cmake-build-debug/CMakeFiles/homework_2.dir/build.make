@@ -68,15 +68,15 @@ include CMakeFiles/homework_2.dir/flags.make
 CMakeFiles/homework_2.dir/main.cpp.obj: CMakeFiles/homework_2.dir/flags.make
 CMakeFiles/homework_2.dir/main.cpp.obj: ../main.cpp
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\homework_2\cmake-build-debug\CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/homework_2.dir/main.cpp.obj"
-	C:\MinGW\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles\homework_2.dir\main.cpp.obj -c C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\homework_2\main.cpp
+	C:\PROGRA~1\MINGW-~1\X86_64~1.0-P\mingw64\bin\G__~1.EXE $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles\homework_2.dir\main.cpp.obj -c C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\homework_2\main.cpp
 
 CMakeFiles/homework_2.dir/main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/homework_2.dir/main.cpp.i"
-	C:\MinGW\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\homework_2\main.cpp > CMakeFiles\homework_2.dir\main.cpp.i
+	C:\PROGRA~1\MINGW-~1\X86_64~1.0-P\mingw64\bin\G__~1.EXE $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\homework_2\main.cpp > CMakeFiles\homework_2.dir\main.cpp.i
 
 CMakeFiles/homework_2.dir/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/homework_2.dir/main.cpp.s"
-	C:\MinGW\bin\g++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\homework_2\main.cpp -o CMakeFiles\homework_2.dir\main.cpp.s
+	C:\PROGRA~1\MINGW-~1\X86_64~1.0-P\mingw64\bin\G__~1.EXE $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\homework_2\main.cpp -o CMakeFiles\homework_2.dir\main.cpp.s
 
 # Object files for target homework_2
 homework_2_OBJECTS = \
