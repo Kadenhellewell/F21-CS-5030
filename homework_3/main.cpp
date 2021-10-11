@@ -1,8 +1,11 @@
+#include <iostream>
+
 //Parallelize using OpenMP
 
 void count_sort( int a[], int n, int thread_count) {
     int i, j, count;
-    int * temp = malloc(n* sizeof ( int ));
+    int* temp;
+    
     for (i = 0; i < n; i++) {
         count = 0;
         for (j = 0; j < n; j++)
@@ -33,7 +36,7 @@ int main(int argc, char* argv[])
     //Create array of n elements (integers, srand(100))
     //Pass thread_count into count_sort
     //Print array pre and post sorted
-
+    std::cout << "The project can start" << std::endl;
     return 0;
 }
 
