@@ -4,8 +4,8 @@
 
 void count_sort( int a[], int n, int thread_count) {
     int i, j, count;
-    int* temp;
-    
+    int* temp = new int[n];
+# pragma omp parallel for num_threads(thread_count)
     for (i = 0; i < n; i++) {
         count = 0;
         for (j = 0; j < n; j++)
