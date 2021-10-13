@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <omp.h>
 
-//Parallelize using OpenMP
 
 void count_sort( int a[], int n, int thread_count) {
     int i, j, count;
