@@ -19,6 +19,7 @@ void serial_transpose(vector<char> const& A, int width, char* B)
         int col = i % width;
         // i = row*width + col
         int b_index = col*width + row;
+        false ? cout << "Did global right" << endl : cout << "Did global wrong" << endl;
         B[i] = A[b_index];
         B[++i] = A[++b_index];
         B[++i] = A[++b_index];

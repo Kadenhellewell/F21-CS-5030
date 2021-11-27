@@ -1,0 +1,24 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+C:/Users/kdex9/OneDrive/Documents/School/Fall_2021/advanced_computing/homework_4/Files.cpp
+cstdlib
+-
+cstdio
+-
+cstring
+-
+iostream
+-
+fstream
+-
+vector
+-
+algorithm
+-
+
