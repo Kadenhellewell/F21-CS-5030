@@ -33,6 +33,7 @@ int main(int argc, char* argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     auto* data = new float[data_count];
 
+    //Get_arg includes broadcasting
     Get_arg(argc, argv);
 
     if(my_rank == 0)
@@ -40,13 +41,14 @@ int main(int argc, char* argv[]) {
         srand(100);
         init_data(data_count, max_meas, min_meas, data);
         MPI_Scatter(data, data_count, MPI_FLOAT, local_data, MPI_FLOAT, 0, comm);
-        //receive the results of the sorting from each process, add together, then print the results
+        //TODO: receive data from other processes using MPI_Receive
     }
     else
     {
         MPI_Scatter(data, data_count, MPI_FLOAT, local_data, MPI_FLOAT, 0, comm);
+        //TODO:
         //Do the sorting into bins here (local data into some local filled_bins).
-        //Send the result back to process
+        //Send the results back to process 0 using MPI_Send
     }
 
     MPI_Finalize(&argc, &argv);
