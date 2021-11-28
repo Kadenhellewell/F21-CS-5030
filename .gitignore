@@ -38,6 +38,13 @@
 *.idea/
 *.cmake-build-debug/
 *.raw
+*.cbp
+*.cmake
+*.marks
+*.make
+*.rsp
+*.internal
+*.includecache
 # User-specific stuff:
 .idea/workspace.xml
 .idea/tasks.xml
