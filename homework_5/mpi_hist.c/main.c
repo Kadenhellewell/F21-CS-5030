@@ -1,8 +1,5 @@
-#include <iostream>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <mpi.h>
+
+#include <stdlib.h>
 
 float get_random(float max, float min);
 void init_data(int count, float max, float min, float* to_populate);
@@ -32,6 +29,7 @@ int main(int argc, char* argv[]) {
     comm = MPI_COMM_WORLD;
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    //TODO: figure out how to declare arrays in C
     float* data = new float[data_count];
     float* filled_bins = new float[bin_count];
 
@@ -47,7 +45,6 @@ int main(int argc, char* argv[]) {
         {
             filled_bins[i] = 0;
         }
-        //TODO: receive data from other processes using MPI_Receive
         for(int i = 0; i < comm_sz; i++)
         {
             float *incoming_bins = new float[local_n];
@@ -55,6 +52,7 @@ int main(int argc, char* argv[]) {
             for(int j = 0; j < bin_count; j++)
                 filled_bins[j] += incoming_bins[j];
         }
+        //TODO: figure out how to write to the console in C
         std::cout << "The bins are: ";
         for(int i = 0; i < bin_count; i++)
         {
@@ -65,15 +63,13 @@ int main(int argc, char* argv[]) {
     else
     {
         MPI_Scatter(data, local_n, MPI_FLOAT, local_data, local_n, MPI_FLOAT, 0, comm);
+        //TODO: figure out how to declare this in C
         float *local_bins = new float[bin_count];
         //Initialize local bins to zero
         for(int i = 0; i < local_n; i++)
         {
             local_bins[i] = 0;
         }
-        //TODO:
-        //Do the sorting into bins here (local data into some local filled_bins).
-        //Send the results back to process 0 using MPI_Send
         for(int i = 0; i < local_n; i++)
         {
             for(int j = 0; j < bin_count; j++)
@@ -100,10 +96,12 @@ int main(int argc, char* argv[]) {
 void Get_arg(int argc, char* argv[])
 {
     //TODO: time permitting, add input validation
+    //TODO: figure out how to declare this in C
     bin_maxes = new float[bin_count];
 
     if(my_rank == 0)
     {
+        //TODO: figure out how to get input from command line in C
         std::string b_count_string(argv[1]);
         bin_count = std::stoi(b_count_string);
 
@@ -168,3 +166,4 @@ void init_bins(float max, float min, int num_bins, float* bin_limits)
         current += size;
     }
 }
+
