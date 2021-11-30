@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
 
     float* local_data;
 
+    bin_maxes = new float[bin_count];
     MPI_Init(&argc, &argv);
     comm = MPI_COMM_WORLD;
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
@@ -51,9 +52,10 @@ int main(int argc, char* argv[]) {
         for(int i = 0; i < comm_sz; i++)
         {
             float *incoming_bins = new float[local_n];
-            MPI_Recv(incoming_bins, local_n, MPI_FLOAT, i, MPI_ANY_TAG, comm, MPI_STATUS_IGNORE);
+            MPI_Recv(incoming_bins, local_n, MPI_FLOAT, i, i, comm, MPI_STATUS_IGNORE);
             for(int j = 0; j < bin_count; j++)
                 filled_bins[j] += incoming_bins[j];
+	    delete incoming_bins;
         }
         std::cout << "The bins are: ";
         for(int i = 0; i < bin_count; i++)
@@ -85,9 +87,13 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        MPI_Send(local_bins, local_n, MPI_FLOAT, 0, MPI_ANY_TAG, comm);
+        MPI_Send(local_bins, local_n, MPI_FLOAT, 0, my_rank, comm);
+	delete local_bins;
     }
-
+    delete local_data;
+    delete data;
+    delete filled_bins;	
+    delete bin_maxes;
     MPI_Finalize();
     return 0;
 }
@@ -100,7 +106,6 @@ int main(int argc, char* argv[]) {
 void Get_arg(int argc, char* argv[])
 {
     //TODO: time permitting, add input validation
-    bin_maxes = new float[bin_count];
 
     if(my_rank == 0)
     {
