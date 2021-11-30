@@ -52,10 +52,10 @@ int main(int argc, char* argv[]) {
         for(int i = 0; i < comm_sz; i++)
         {
             float *incoming_bins = new float[local_n];
-            MPI_Recv(incoming_bins, local_n, MPI_FLOAT, i, i, comm, MPI_STATUS_IGNORE);
+            MPI_Recv(incoming_bins, local_n, MPI_FLOAT, i, 0, comm, MPI_STATUS_IGNORE);
             for(int j = 0; j < bin_count; j++)
                 filled_bins[j] += incoming_bins[j];
-	    delete incoming_bins;
+	    delete[] incoming_bins;
         }
         std::cout << "The bins are: ";
         for(int i = 0; i < bin_count; i++)
@@ -66,7 +66,8 @@ int main(int argc, char* argv[]) {
     }
     else
     {
-        MPI_Scatter(data, local_n, MPI_FLOAT, local_data, local_n, MPI_FLOAT, 0, comm);
+        local_data* = new float[local_n];
+	MPI_Scatter(data, local_n, MPI_FLOAT, local_data, local_n, MPI_FLOAT, 0, comm);
         float *local_bins = new float[bin_count];
         //Initialize local bins to zero
         for(int i = 0; i < local_n; i++)
@@ -87,12 +88,13 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        MPI_Send(local_bins, local_n, MPI_FLOAT, 0, my_rank, comm);
-	delete local_bins;
+        MPI_Send(local_bins, local_n, MPI_FLOAT, 0, 0, comm);
+	delete[] local_bins;
+	delete local_data;
     }
-    delete local_data;
-    delete data;
-    delete filled_bins;	
+    
+    delete[] data;
+    delete[] filled_bins;
     delete bin_maxes;
     MPI_Finalize();
     return 0;
