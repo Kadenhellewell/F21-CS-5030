@@ -1,3 +1,17 @@
+/**
+ * Report:
+ * Compile: mpic++ -g -Wall -0 <output file name> <source file name>
+ * Execute: mpiexec -n <num processes> ./<output file name> <bin_count> <min val> <max val> <data count>
+ * I worked on notchpeak with modules gcc/6 and mpich.
+ *
+ * I was unable to get to the scaling part of the assignment.
+ * I was also unable to get the algorithm quite right. I think the error is in my use of MPI_Scatter (processes have
+ * nothing in their local_data).
+ * Unlike the previous assignment, I was actually able to get this to compile and run to completion, though my
+ * results were not correct.
+ */
+
+
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
@@ -33,54 +47,37 @@ int main(int argc, char* argv[]) {
     comm = MPI_COMM_WORLD;
     MPI_Comm_size(comm, &comm_sz);
     MPI_Comm_rank(comm, &my_rank);
+    //Get_arg includes broadcasting
     Get_arg(argc, argv);
-    std::cout << "I am here " << my_rank << std:: endl;
 
     float* data = new float[data_count];
-    float* filled_bins = new float[bin_count];
-    //Get_arg includes broadcasting
+    float* bin_counts = new float[bin_count];
+    local_data = new float[local_n];
 
     if(my_rank == 0)
     {
-
         srand(100);
-        //init_data(data_count, max_meas, min_meas, data);
-        /*
+        init_data(data_count, max_meas, min_meas, data);
+        //Initialize bin counts to zero
+        for(int i = 0; i < bin_count; i++)
+        {
+            bin_counts[i] = 0;
+        }
+        //Scatter array to other processes
         MPI_Scatter(data, local_n, MPI_FLOAT, local_data, local_n, MPI_FLOAT, 0, comm);
-        for(int i = 0; i < bin_count; i++)
-        {
-            filled_bins[i] = 0;
-        }
-        //TODO: receive data from other processes using MPI_Receive
-        for(int i = 0; i < comm_sz; i++)
-        {
-            float *incoming_bins = new float[local_n];
-            MPI_Recv(incoming_bins, local_n, MPI_FLOAT, i, 0, comm, MPI_STATUS_IGNORE);
-            for(int j = 0; j < bin_count; j++)
-                filled_bins[j] += incoming_bins[j];
-	    delete[] incoming_bins;
-        }
-        std::cout << "The bins are: ";
-        for(int i = 0; i < bin_count; i++)
-        {
-            std::cout << filled_bins[i] << ", ";
-        }
-        std::cout << std::endl;*/
     }
     else
     {
-/*
-        local_data = new float[local_n];
-	MPI_Scatter(data, local_n, MPI_FLOAT, local_data, local_n, MPI_FLOAT, 0, comm);
+        //Receive scattering from 0
+	    MPI_Scatter(data, local_n, MPI_FLOAT, local_data, local_n, MPI_FLOAT, 0, comm);
         float *local_bins = new float[bin_count];
-        //Initialize local bins to zero
+        //Initialize local bin counts to zero
         for(int i = 0; i < local_n; i++)
         {
             local_bins[i] = 0;
         }
-        //TODO:
-        //Do the sorting into bins here (local data into some local filled_bins).
-        //Send the results back to process 0 using MPI_Send
+
+        //Compute local histogram
         for(int i = 0; i < local_n; i++)
         {
             for(int j = 0; j < bin_count; j++)
@@ -92,13 +89,37 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+
+        //Send local histogram back to process 0
         MPI_Send(local_bins, local_n, MPI_FLOAT, 0, 0, comm);
-	delete[] local_bins;
-	delete[] local_data;*/
+	    delete[] local_bins;
+	    delete[] local_data;
+    }
+
+    if(my_rank == 0)
+    {
+        for(int i = 1; i < comm_sz; i++)
+        {
+            float *incoming_bins = new float[local_n];
+            //Receive local histogram from each process
+            MPI_Recv(incoming_bins, local_n, MPI_FLOAT, i, 0, comm, MPI_STATUS_IGNORE);
+            //Add local histogram into global histogram (I would have used reduce here, but I didn't know how to do that with
+            //an array)
+            for(int j = 0; j < bin_count; j++)
+                bin_counts[j] += incoming_bins[j];
+            delete[] incoming_bins;
+        }
+        //Report final bin counts
+        std::cout << "The bins counts are: ";
+        for(int i = 0; i < bin_count; i++)
+        {
+            std::cout << bin_counts[i] << ", ";
+        }
+        std::cout << std::endl;
     }
     
     delete[] data;
-    delete[] filled_bins;
+    delete[] bin_counts;
     delete[] bin_maxes;
     MPI_Finalize();
     return 0;
@@ -111,30 +132,33 @@ int main(int argc, char* argv[]) {
  */
 void Get_arg(int argc, char* argv[])
 {
-    //TODO: time permitting, add input validation
-    std::cout << "I get inside get-arg" << std::endl;
+    MPI_Barrier(comm);
     if(my_rank == 0)
     {
         std::string b_count_string(argv[1]);
         bin_count = atoi(argv[1]);
-	std::cout << "I set bin_count" << std::endl;
+	
         std::string min_meas_string(argv[2]);
         min_meas = atof(argv[2]);
-	std::cout << "I set min meas" << std::endl;
+
         std::string  max_meas_string(argv[3]);
         max_meas = atof(argv[3]);
-	std::cout << "I set max_meas" << std::endl;
+	
         std::string d_count_string(argv[4]);
         data_count = atoi(argv[4]);
-	std::cout << "I set data_count" << std::endl;
-        local_n = data_count / comm_sz;
-        bin_maxes = new float[bin_count];
-        init_bins();
+        
+	    local_n = data_count / comm_sz;
     }
-    std::cout << "I get to the barrier " << my_rank << std::endl;
     MPI_Barrier(comm);
-    std::cout << "I get to the bcasts " << my_rank << std::endl;
     MPI_Bcast(&bin_count, 1, MPI_INT, 0, comm);
+
+    bin_maxes = new float[bin_count];
+    if(my_rank == 0)
+    {
+	    init_bins();
+    }
+    
+    MPI_Barrier(comm);
     MPI_Bcast(bin_maxes, bin_count, MPI_FLOAT, 0, comm);
 }
 
@@ -164,23 +188,23 @@ void init_data(int count, float max, float min, float* to_populate)
     {
         to_populate[i] = get_random(max, min);
     }
+    std::cout << std::endl;
 }
 
 /**
  * Initialize the bin sizes
- * @param max the max value
- * @param min the min value
- * @param num_bins number of bins
- * @param bin_limits the top limits of the bins
  */
 void init_bins()
 {
     float size = (float)(max_meas - min_meas) / (float)bin_count;
     float current = size;
+    //Calculate and report bin maxes
+    std::cout << "The bin maxes are: ";
     for(int i = 0; i < bin_count; i++)
     {
-	std::cout << "This is the bin max: " << current << " at " << i << std::endl;
         bin_maxes[i] = current;
+	    std::cout << current << ", ";
         current += size;
     }
+    std::cout << std::endl;
 }
