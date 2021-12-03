@@ -1,0 +1,21 @@
+"C:\Program Files\JetBrains\CLion 2021.2.1\bin\cmake\win\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_CUDA_COMPILER=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.5/bin/nvcc.exe" -DCMAKE_DEPENDS_USE_COMPILER=FALSE -G "CodeBlocks - MinGW Makefiles" C:\Users\kdex9\OneDrive\Documents\School\Fall_2021\advanced_computing\project\project_cuda
+-- The CUDA compiler identification is unknown
+-- The CXX compiler identification is GNU 8.1.0
+-- Check for working CUDA compiler: C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.5/bin/nvcc.exe
+CMake Error in C:/Users/kdex9/OneDrive/Documents/School/Fall_2021/advanced_computing/project/project_cuda/cmake-build-debug/CMakeFiles/CMakeTmp/CMakeLists.txt:
+  CUDA_ARCHITECTURES is empty for target "cmTC_40203".
+
+
+CMake Error in C:/Users/kdex9/OneDrive/Documents/School/Fall_2021/advanced_computing/project/project_cuda/cmake-build-debug/CMakeFiles/CMakeTmp/CMakeLists.txt:
+  CUDA_ARCHITECTURES is empty for target "cmTC_40203".
+
+
+CMake Error at C:/Program Files/JetBrains/CLion 2021.2.1/bin/cmake/win/share/cmake-3.20/Modules/CMakeTestCUDACompiler.cmake:39 (try_compile):
+  Failed to generate test project build system.
+Call Stack (most recent call first):
+  CMakeLists.txt:2 (project)
+
+
+-- Configuring incomplete, errors occurred!
+See also "C:/Users/kdex9/OneDrive/Documents/School/Fall_2021/advanced_computing/project/project_cuda/cmake-build-debug/CMakeFiles/CMakeOutput.log".
+See also "C:/Users/kdex9/OneDrive/Documents/School/Fall_2021/advanced_computing/project/project_cuda/cmake-build-debug/CMakeFiles/CMakeError.log".

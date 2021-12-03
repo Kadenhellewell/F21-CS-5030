@@ -35,7 +35,7 @@ int main()
     ifstream inFile;
     ofstream outFile;
 
-    inFile.open("gc_1024x1024.raw", ios_base::binary);
+    inFile.open("gc_1024x1024.raw");
     char myChar;
     vector<char> buffer;
     buffer[0];
