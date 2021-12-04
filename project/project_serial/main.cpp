@@ -2,10 +2,6 @@
 #include <fstream>
 #include <vector>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-//#include <mpi.h>
 
 using namespace std;
 
@@ -31,15 +27,11 @@ Point add_vector_point(Point p, Vector v);
 Point rungeKutta(Point p, float time_step);
 bool not_in_range(Point p);
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
-//for a total of 780,000 vectors
-//MPI_Comm comm;
 
-
-int comm_sz; //Number of Process
-int my_rank; //Rank of current process
 
 int data_cols = 1300;
 int data_rows = 600;
+//for a total of 780,000 vectors
 vector<Vector> vectors;
 
 // description here of what order things are passed in
@@ -48,15 +40,6 @@ vector<Vector> vectors;
 // 3. max
 // 4. data count
 int main(int argc, char* argv[]) {
-
-//    MPI_Init(&argc, &argv);
-//    comm = MPI_COMM_WORLD;
-//    MPI_Comm_size(comm, &comm_sz);
-//    MPI_Comm_rank(comm, &my_rank);
-
-    //Read in file
-    //vector<float> buffer;
-    float f;
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
     std::ofstream outFile("streamlines.csv", std::ios::app);
 
@@ -115,9 +98,6 @@ int main(int argc, char* argv[]) {
         }
     }
     outFile.close();
-
-
-    //MPI_Finalize();
     return 0;
 }
 
