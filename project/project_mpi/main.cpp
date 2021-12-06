@@ -106,8 +106,7 @@ int main(int argc, char* argv[]) {
             for(int step = 0; step < num_steps; step++)
             {
                 if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.
-		string string1, string2, string3;
-                string new_thing = itoa(lineId, string1, 10) + ", " + ftoa(current.x_coord, string2, 10) + ", " + ftoa(current.y_coord, string3, 10) + "\n";
+                string new_thing = lineId + ", " + current.x_coord + ", " + current.y_coord + "\n";
                 my_lines[step] = new_thing;
                 total_chars += new_thing.length();
                 current = rungeKutta(current, time_step);
