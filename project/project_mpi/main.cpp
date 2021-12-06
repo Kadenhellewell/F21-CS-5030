@@ -48,8 +48,8 @@ Vector* vectors;
 // 2. min
 // 3. max
 // 4. data count
-int main(int argc, char* argv[]) {
-
+int main(int argc, char* argv[])
+{
     MPI_Init(&argc, &argv);
     comm = MPI_COMM_WORLD;
     MPI_Comm_size(comm, &comm_sz);
@@ -61,7 +61,8 @@ int main(int argc, char* argv[]) {
     {
         std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
         float * buffer;
-        if (inFile) {
+        if (inFile)
+        {
             // get length of file:
             inFile.seekg (0, inFile.end);
             int length = inFile.tellg();
@@ -94,8 +95,7 @@ int main(int argc, char* argv[]) {
         float initial_y = my_first;
         float time_step = .2;
         //create string array; store output lines there
-        vector<string> my_lines;
-	int total_chars = 0;
+        stringstream ss;
         Point current{};
         current.x_coord = initial_x;
         current.y_coord = initial_y;
@@ -107,26 +107,21 @@ int main(int argc, char* argv[]) {
             for(int step = 0; step < num_steps; step++)
             {
                 if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.i
-		stringstream ss;
-		ss << lineId + ", " << current.x_coord << ", " << current.y_coord << "\n";
-                string new_thing = ss.str();
-		if(my_rank == 2)
-		{
-		    cout << new_thing << endl;
-		}
-                my_lines.push_back(new_thing);
-		total_chars += new_thing.length();
+		        ss << lineId << ", " << current.x_coord << ", " << current.y_coord << "\n";
                 current = rungeKutta(current, time_step);
             }
         }
         //send size before array
+        string lines = ss.str();
+	    int total_chars = lines.length();
         MPI_Send(&total_chars, 1, MPI_INT, 0, 0, comm);
-        MPI_Send(my_lines.data(), total_chars, MPI_CHAR, 0, 0, comm);
+        MPI_Send(&lines, total_chars, MPI_CHAR, 0, 0, comm);
     }
 
     if(my_rank == 0)
     {
         std::ofstream outFile("streamlines_mpi.csv", std::ios::app);
+	outfile << "line_id, coordinate_x, coordinate_y" << endl;
         for(int i = 1; i < comm_sz; i++)
         {
             int total_chars;
