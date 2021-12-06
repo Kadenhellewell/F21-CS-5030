@@ -4,8 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
-//#include <mpi.h>
+#include <string>
+#include <mpi.h>
 
 using namespace std;
 
@@ -31,16 +31,16 @@ Point add_vector_point(Point p, Vector v);
 Point rungeKutta(Point p, float time_step);
 bool not_in_range(Point p);
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
-//for a total of 780,000 vectors
-//MPI_Comm comm;
 
-
+MPI_Comm comm;
 int comm_sz; //Number of Process
 int my_rank; //Rank of current process
 
+int num_steps = 50;
 int data_cols = 1300;
 int data_rows = 600;
-vector<Vector> vectors;
+//for a total of 780,000 vectors
+Vector* vectors;
 
 // description here of what order things are passed in
 // 1. bin count
@@ -49,75 +49,94 @@ vector<Vector> vectors;
 // 4. data count
 int main(int argc, char* argv[]) {
 
-//    MPI_Init(&argc, &argv);
-//    comm = MPI_COMM_WORLD;
-//    MPI_Comm_size(comm, &comm_sz);
-//    MPI_Comm_rank(comm, &my_rank);
-
-    //Read in file
-    //vector<float> buffer;
-    float f;
-    std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
-    std::ofstream outFile("streamlines.csv", std::ios::app);
-
-    float * buffer = nullptr;
-    if (inFile) {
-        // get length of file:
-        inFile.seekg (0, inFile.end);
-        int length = inFile.tellg();
-        inFile.seekg (0, inFile.beg);
-        buffer = new float[length / sizeof(float)];
-
-        std::cout << "Reading " << length << " characters... " << endl;
-        // read data as a block:
-        inFile.read ((char*)buffer, length);
-
-        if (inFile)
-            std::cout << "all characters read successfully." << endl;
-        else
-            std::cout << "error: only " << inFile.gcount() << " could be read";
-        inFile.close();
-
-
-        //Set up vector of vectors
-        for(int i = 0; i < length / sizeof(float); i++)
-        {
-            Vector thisVector{};
-            thisVector.x_val = buffer[i];
-            thisVector.y_val = buffer[++i];
-            vectors.push_back(thisVector);
-        }
-    }
-
-
-    float initial_x = 0;
-    float initial_y = 10;
-    float time_step = .2;
-
-    outFile << "line_id, coordinate_x, coordinate_y" << endl;
-    Point current{};
-    current.x_coord = initial_x;
-    current.y_coord = initial_y;
-    for(int row = 0; row < 10; row++)
+    MPI_Init(&argc, &argv);
+    comm = MPI_COMM_WORLD;
+    MPI_Comm_size(comm, &comm_sz);
+    MPI_Comm_rank(comm, &my_rank);
+    int lines_per_proc = data_rows / (comm_sz - 1);//the -1 is for the fact that 0 doesn't do this
+    int data_size = data_rows*data_cols*2;
+    vectors = new Vector[data_size];
+    if(my_rank == 0)
     {
-        int lineId = row;
-        current.x_coord = 0;
-        current.y_coord = lineId;
-        for(int step = 0; step < 100; step++)//this loop doesn't need to depend on columns, some lines loop in vortex. pick stopping time
-        {
-            if(not_in_range(current))
+        std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
+        float * buffer;
+        if (inFile) {
+            // get length of file:
+            inFile.seekg (0, inFile.end);
+            int length = inFile.tellg();
+            inFile.seekg (0, inFile.beg);
+            buffer = new float[length / sizeof(float)];
+
+            std::cout << "Reading " << length << " characters... " << endl;
+            // read data as a block:
+            inFile.read ((char*)buffer, length);
+            inFile.close();
+
+            //Set up vector of vectors
+            for(unsigned int i = 0; i < length / sizeof(float); i++)
             {
-                //The streamline has left the known vector field. Go to the next line.
-                break;
+                Vector thisVector{};
+                thisVector.x_val = buffer[i];
+                thisVector.y_val = buffer[++i];
+                vectors[i] = thisVector;
             }
-            outFile << lineId << ", " << current.x_coord << ", " << current.y_coord << endl;
-            current = rungeKutta(current, time_step);
         }
     }
-    outFile.close();
+    //MPI_Bcast(bin_maxes, bin_count, MPI_FLOAT, 0, comm);
+    MPI_Barrier(comm);
+    MPI_Bcast(vectors, data_size, MPI_FLOAT, 0, comm);
+    if(my_rank != 0)
+    {
+        int my_first = lines_per_proc*(my_rank - 1); //the -1 is for the fact that 0 doesn't do this
+        int my_last = my_first + lines_per_proc; //inclusive
+        float initial_x = 0;//all streamlines start at x=0
+        float initial_y = my_first;
+        float time_step = .2;
+        //create string array; store output lines there
+        string* my_lines = new string[num_steps];
+        Point current{};
+        current.x_coord = initial_x;
+        current.y_coord = initial_y;
+        int total_chars = 0;
+        for(int lineId = my_first; lineId <= my_last; lineId++)
+        {
+            if(lineId >= data_cols) break; //passed the bottom row
+            current.x_coord = 0;
+            current.y_coord = lineId;
+            for(int step = 0; step < num_steps; step++)
+            {
+                if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.
+		string string1, string2, string3;
+                string new_thing = itoa(lineId, string1, 10) + ", " + ftoa(current.x_coord, string2, 10) + ", " + ftoa(current.y_coord, string3, 10) + "\n";
+                my_lines[step] = new_thing;
+                total_chars += new_thing.length();
+                current = rungeKutta(current, time_step);
+            }
+        }
+        //send size before array
+        MPI_Send(&total_chars, 1, MPI_INT, 0, 0, comm);
+        MPI_Send(my_lines, total_chars, MPI_CHAR, 0, 0, comm);
+    }
 
+    if(my_rank == 0)
+    {
+        std::ofstream outFile("streamlines.csv", std::ios::app);
+        for(int i = 1; i < comm_sz; i++)
+        {
+            int total_chars;
+            string *incoming_lines = new string[num_steps];
+            //Receive local streamlines from each process
+            MPI_Recv(&total_chars, 1, MPI_INT, i, 0, comm, MPI_STATUS_IGNORE);
+            MPI_Recv(incoming_lines, total_chars, MPI_CHAR, i, 0, comm, MPI_STATUS_IGNORE);
 
-    //MPI_Finalize();
+            //print local streams to file
+            for(int j = 0; j < num_steps; j++)
+                outFile << incoming_lines[j];
+            delete[] incoming_lines;
+        }
+    }
+
+    MPI_Finalize();
     return 0;
 }
 

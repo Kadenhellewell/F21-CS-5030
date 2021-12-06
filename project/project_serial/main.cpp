@@ -1,3 +1,10 @@
+/**
+ * Serial Implementation
+ * Solely for figuring out the algorithms
+ * Not for grading (unless I can get points for it)
+ */
+
+
 #include <iostream>
 #include <fstream>
 #include <vector>
