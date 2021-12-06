@@ -6,10 +6,11 @@
 #include <cstdlib>
 #include <string>
 #include <mpi.h>
+#include <sstream>
 
 using namespace std;
 
-//These are separate structs to aid is differentiating points and vectors
+//These are separate structs to aid in differentiating points and vectors
 struct Vector{
     float x_val;
     float y_val;
@@ -36,7 +37,7 @@ MPI_Comm comm;
 int comm_sz; //Number of Process
 int my_rank; //Rank of current process
 
-int num_steps = 50;
+int num_steps = 15;
 int data_cols = 1300;
 int data_rows = 600;
 //for a total of 780,000 vectors
@@ -93,11 +94,11 @@ int main(int argc, char* argv[]) {
         float initial_y = my_first;
         float time_step = .2;
         //create string array; store output lines there
-        string* my_lines = new string[num_steps];
+        vector<string> my_lines;
+	int total_chars = 0;
         Point current{};
         current.x_coord = initial_x;
         current.y_coord = initial_y;
-        int total_chars = 0;
         for(int lineId = my_first; lineId <= my_last; lineId++)
         {
             if(lineId >= data_cols) break; //passed the bottom row
@@ -105,33 +106,39 @@ int main(int argc, char* argv[]) {
             current.y_coord = lineId;
             for(int step = 0; step < num_steps; step++)
             {
-                if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.
-                string new_thing = lineId + ", " + current.x_coord + ", " + current.y_coord + "\n";
-                my_lines[step] = new_thing;
-                total_chars += new_thing.length();
+                if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.i
+		stringstream ss;
+		ss << lineId + ", " << current.x_coord << ", " << current.y_coord << "\n";
+                string new_thing = ss.str();
+		if(my_rank == 2)
+		{
+		    cout << new_thing << endl;
+		}
+                my_lines.push_back(new_thing);
+		total_chars += new_thing.length();
                 current = rungeKutta(current, time_step);
             }
         }
         //send size before array
         MPI_Send(&total_chars, 1, MPI_INT, 0, 0, comm);
-        MPI_Send(my_lines, total_chars, MPI_CHAR, 0, 0, comm);
+        MPI_Send(my_lines.data(), total_chars, MPI_CHAR, 0, 0, comm);
     }
 
     if(my_rank == 0)
     {
-        std::ofstream outFile("streamlines.csv", std::ios::app);
+        std::ofstream outFile("streamlines_mpi.csv", std::ios::app);
         for(int i = 1; i < comm_sz; i++)
         {
             int total_chars;
-            string *incoming_lines = new string[num_steps];
             //Receive local streamlines from each process
             MPI_Recv(&total_chars, 1, MPI_INT, i, 0, comm, MPI_STATUS_IGNORE);
+	    char *incoming_lines = new char[total_chars];
             MPI_Recv(incoming_lines, total_chars, MPI_CHAR, i, 0, comm, MPI_STATUS_IGNORE);
-
             //print local streams to file
-            for(int j = 0; j < num_steps; j++)
+            for(int j = 0; j < total_chars; j++)
                 outFile << incoming_lines[j];
             delete[] incoming_lines;
+	    cout << "Done with " << i << endl;
         }
     }
 
