@@ -43,11 +43,6 @@ int data_rows = 600;
 //for a total of 780,000 vectors
 Vector* vectors;
 
-// description here of what order things are passed in
-// 1. bin count
-// 2. min
-// 3. max
-// 4. data count
 int main(int argc, char* argv[])
 {
     MPI_Init(&argc, &argv);
@@ -141,12 +136,26 @@ int main(int argc, char* argv[])
     return 0;
 }
 
+/**
+ * Get the value of the given vector field at the given point.
+ * For integers, this can be directly retrieved from the vector field (no interpolation needed).
+ * @param x_coord the x coordinate
+ * @param y_coord the y coordinate
+ * @return a Vector object
+ */
 Vector get_v_from_field(int x_coord, int y_coord)
 {
     int index = y_coord*data_cols + x_coord;
     return vectors[index];
 }
 
+/**
+ * Get the value of the given vector field at the given point.
+ * This method uses Bilinear Interpolation.
+ * @param x_coord the x coordinate
+ * @param y_coord the y coordinate
+ * @return a Vector object
+ */
 Vector get_v_from_field(float x_coord, float y_coord)
 {
     //Bilinear Interpolation
@@ -203,6 +212,15 @@ Vector get_v_from_field(float x_coord, float y_coord)
    \[{P(x,y) = R_{1} \frac{y_{2}-y}{y_{2}-y_{1}} + R_{2} \frac{y-y_{1}}{y_{2}-y_{1}}} \tag{3}\]
  */
 
+/**
+ * This method performs linear interpolation.
+ * @param v1 the vector corresponding to the larger point
+ * @param v2 the vector corresponding to the smaller point
+ * @param bigP the larger point
+ * @param smallP the smaller point
+ * @param p the desired point
+ * @return the vector at the desired point
+ */
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
 {
     Vector temp1 = const_vect_mult((bigP - p) / (bigP - smallP), v1);
@@ -211,11 +229,22 @@ Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
     return returnVector;
 }
 
+/**
+ * Wrapper function. Gets the vector associated with a point.
+ * @param p the point
+ * @return the desired vector
+ */
 Vector get_v_from_field(Point p)
 {
     return get_v_from_field(p.x_coord, p.y_coord);
 }
 
+/**
+ * Multiply a vector by a constant.
+ * @param c the constant
+ * @param v the vector
+ * @return the new vector
+ */
 Vector const_vect_mult(float c, Vector v)
 {
     Vector returnVector{};
@@ -224,6 +253,12 @@ Vector const_vect_mult(float c, Vector v)
     return returnVector;
 }
 
+/**
+ * Add 2 vectors together
+ * @param v1 the first vector
+ * @param v2 the second vector
+ * @return the sum of the two vectors
+ */
 Vector add_vectors(Vector v1, Vector v2)
 {
     Vector returnVector{};
@@ -232,6 +267,12 @@ Vector add_vectors(Vector v1, Vector v2)
     return returnVector;
 }
 
+/**
+ * Add a vector to a point to get a new point
+ * @param p the starting point
+ * @param v the vector
+ * @return the new point
+ */
 Point add_vector_point(Point p, Vector v)
 {
     Point returnPoint{};
@@ -240,6 +281,12 @@ Point add_vector_point(Point p, Vector v)
     return returnPoint;
 }
 
+/**
+ * Do the Runge-Kutta algorithm
+ * @param p the starting point
+ * @param time_step the time step
+ * @return the next point
+ */
 Point rungeKutta(Point p, float time_step)
 {
     Vector k1{}, k2{}, k3{}, k4{};
@@ -270,6 +317,11 @@ Point rungeKutta(Point p, float time_step)
 }
 //Algorithm from: https://web.cs.ucdavis.edu/~ma/ECS177/papers/particle_tracing.pdf
 
+/**
+ * Check if a point is within the given vector field
+ * @param p the point
+ * @return whether the point is not in the vector field
+ */
 bool not_in_range(Point p)
 {
     return p.x_coord < 0 || p.x_coord >= data_cols || p.y_coord < 0 || p.y_coord >= data_rows;

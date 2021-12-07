@@ -52,8 +52,8 @@ __device__
 void calculate_stream_lines(Vector* vectors, float* streams)//streams is the output
 {
     //Each thread calculates one stream
-    int i = blockIdx.x*blockDim.x + threadIdx.x;
-    int startPoint = 5;//TODO: calculate this
+    int i = blockIdx.x*blockDim.x + threadIdx.x;//TODO: make sure this is correct for 1D
+    int startPoint = i*num_steps*3;//TODO: calculate this
     Point current{};
     current.x_coord = initial_x;
     current.y_coord = initial_y;
@@ -66,18 +66,12 @@ void calculate_stream_lines(Vector* vectors, float* streams)//streams is the out
         streams[startPoint] = lineId;
         streams[startPoint + (++step)] = current.x_coord;
         streams[startPoint + (+=step)] = current.y_coord;
-
         current = rungeKutta(current, time_step);
     }
-
 }
 
-// description here of what order things are passed in
-// 1. bin count
-// 2. min
-// 3. max
-// 4. data count
-int main(int argc, char* argv[]) {
+
+int main() {
     Vector* vectors;
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
     std::ofstream outFile("streamlines_cuda.csv", std::ios::app);
@@ -139,6 +133,14 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+/**
+ * Get the value of the given vector field at the given point.
+ * For integers, this can be directly retrieved from the vector field (no interpolation needed).
+ * @param x_coord the x coordinate
+ * @param y_coord the y coordinate
+ * @param vectors the vector field
+ * @return a Vector object
+ */
 __device__
 Vector get_v_from_field(int x_coord, int y_coord, Vector* vectors)
 {
@@ -146,6 +148,14 @@ Vector get_v_from_field(int x_coord, int y_coord, Vector* vectors)
     return vectors[index];
 }
 
+/**
+ * Get the value of the given vector field at the given point.
+ * This method uses Bilinear Interpolation.
+ * @param x_coord the x coordinate
+ * @param y_coord the y coordinate
+ * @param vectors the vector field
+ * @return a Vector object
+ */
 __device__
 Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
 {
@@ -203,6 +213,15 @@ Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
    \[{P(x,y) = R_{1} \frac{y_{2}-y}{y_{2}-y_{1}} + R_{2} \frac{y-y_{1}}{y_{2}-y_{1}}} \tag{3}\]
  */
 
+/**
+ * This method performs linear interpolation.
+ * @param v1 the vector corresponding to the larger point
+ * @param v2 the vector corresponding to the smaller point
+ * @param bigP the larger point
+ * @param smallP the smaller point
+ * @param p the desired point
+ * @return the vector at the desired point
+ */
 __device__
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
 {
@@ -212,12 +231,24 @@ Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
     return returnVector;
 }
 
+/**
+ * Wrapper function. Gets the vector associated with a point.
+ * @param p the point
+ * @param vectors the vector field
+ * @return the desired vector
+ */
 __device__
 Vector get_v_from_field(Point p, Vector* vectors)
 {
     return get_v_from_field(p.x_coord, p.y_coord, vectors);
 }
 
+/**
+ * Multiply a vector by a constant.
+ * @param c the constant
+ * @param v the vector
+ * @return the new vector
+ */
 __device__
 Vector const_vect_mult(float c, Vector v)
 {
@@ -227,6 +258,12 @@ Vector const_vect_mult(float c, Vector v)
     return returnVector;
 }
 
+/**
+ * Add 2 vectors together
+ * @param v1 the first vector
+ * @param v2 the second vector
+ * @return the sum of the two vectors
+ */
 __device__
 Vector add_vectors(Vector v1, Vector v2)
 {
@@ -236,6 +273,12 @@ Vector add_vectors(Vector v1, Vector v2)
     return returnVector;
 }
 
+/**
+ * Add a vector to a point to get a new point
+ * @param p the starting point
+ * @param v the vector
+ * @return the new point
+ */
 __device__
 Point add_vector_point(Point p, Vector v)
 {
@@ -245,6 +288,13 @@ Point add_vector_point(Point p, Vector v)
     return returnPoint;
 }
 
+/**
+ * Do the Runge-Kutta algorithm
+ * @param p the starting point
+ * @param time_step the time step
+ * @param vectors the vector field
+ * @return the next point
+ */
 __device__
 Point rungeKutta(Point p, float time_step, Vector* vectors)
 {
@@ -276,6 +326,11 @@ Point rungeKutta(Point p, float time_step, Vector* vectors)
 }
 //Algorithm from: https://web.cs.ucdavis.edu/~ma/ECS177/papers/particle_tracing.pdf
 
+/**
+ * Check if a point is within the given vector field
+ * @param p the point
+ * @return whether the point is not in the vector field
+ */
 __device__
 bool not_in_range(Point p)
 {
