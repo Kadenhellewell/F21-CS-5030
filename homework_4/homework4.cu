@@ -1,6 +1,5 @@
 /*
- * Hello world cuda
- *
+
  * compile: nvcc hello_cuda.cu -o hello
  *
  *  */

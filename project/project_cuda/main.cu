@@ -1,9 +1,17 @@
+/**
+ * compile: nvcc main.cu -o cuda_streams
+ */
+
+
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <cmath>
 
 using namespace std;
+
+
+
 
 //These are separate structs to aid is differentiating points and vectors
 struct Vector{
@@ -30,14 +38,39 @@ Point rungeKutta(Point p, float time_step);
 bool not_in_range(Point p);
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
 
-
+//I don't know if I can do this variables...
+__global__
 int data_cols = 1300;
+__global__
 int data_rows = 600;
-//TODO: define tile size variables (whatever they are)
 //for a total of 780,000 vectors
-Vector* vectors;
+__global__
+int num_steps = 50;
+//TODO: define tile size variables (whatever they are)
 
-//TODO: implement device functions
+__device__
+void calculate_stream_lines(Vector* vectors, float* streams)//streams is the output
+{
+    //Each thread calculates one stream
+    int i = blockIdx.x*blockDim.x + threadIdx.x;
+    int startPoint = 5;//TODO: calculate this
+    Point current{};
+    current.x_coord = initial_x;
+    current.y_coord = initial_y;
+    if(lineId >= data_cols) break; //passed the bottom row
+    current.x_coord = 0;
+    current.y_coord = lineId;
+    for(int step = 0; step < num_steps; step++)
+    {
+        if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.i
+        streams[startPoint] = lineId;
+        streams[startPoint + (++step)] = current.x_coord;
+        streams[startPoint + (+=step)] = current.y_coord;
+
+        current = rungeKutta(current, time_step);
+    }
+
+}
 
 // description here of what order things are passed in
 // 1. bin count
@@ -45,16 +78,20 @@ Vector* vectors;
 // 3. max
 // 4. data count
 int main(int argc, char* argv[]) {
+    Vector* vectors;
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
-    std::ofstream outFile("streamlines.csv", std::ios::app);
+    std::ofstream outFile("streamlines_cuda.csv", std::ios::app);
+    int stream_size = num_steps*data_rows*3;//data_rows streams, num_steps per stream, 3 floats per step: line_id, coordinate_x, coordinate_y
 
     float * buffer = nullptr;
+    int size;
     if (inFile) {
         // get length of file:
         inFile.seekg (0, inFile.end);
         int length = inFile.tellg();
         inFile.seekg (0, inFile.beg);
-        buffer = new float[length / sizeof(float)];
+        size = length / sizeof(float);
+        buffer = new float[size];
 
         std::cout << "Reading " << length << " characters... " << endl;
         // read data as a block:
@@ -68,37 +105,49 @@ int main(int argc, char* argv[]) {
 
 
         //Set up vector of vectors
-        for(unsigned int i = 0; i < length / sizeof(float); i++)
+        for(unsigned int i = 0; i < size; i++)
         {
             Vector thisVector{};
             thisVector.x_val = buffer[i];
             thisVector.y_val = buffer[++i];
             vectors[i] = thisVector;
         }
-        //cudaMalloc space for vectors in constant memory
-        //cudaMemcpy 'vectors' to constant memory
+        //Allocate spaced on the GPU for vectors, then copy up
+        cudaMalloc(vectors, size);
+        Vector* vectors_d;
+        cudaMemcpy(vectors_d, vectors, size, cudaMemcpyHostToDevice);
     }
+    //allocate space for device results (GPU)
+    float* streams_d;
+    cudaMalloc(streams_d, stream_size);
 
+    //I think I want 1D blocks, since each streamline starts in the first column. Not sure how to do that.
+    //Set grid and block sizes
     dim3 dimGrid;
     dim3 dimBlock;
-    //allocate space for device results (GPU and shared)
-    //Call GPU function
-    //Call shared memory function
-    //fName<<<dimGrid, dimBlock>>>(params)
 
-    //cudaMemcpy results from functions to host for writing to file
+    calculate_stream_lines<<<dimGrid, dimBlock>>>(vectors, streams_d);
+    //copy results of calculating streams to host
+    float* results;
+    cudaMemcpy(results, streams_d, stream_size, cudaMemcpyDeviceToHost);
+    //Parse results, groups of 3, line_id, coordinate_x, coordinate_y
+    outFile << "line_id, coordinate_x, coordinate_y" << endl;
+    for(int line = 0; line < stream_size; line++)
+    {
+        outFile << results[line] << ", " << results[++line] << ", " << results[++line] << endl;
+    }
     return 0;
 }
 
-__global__
-Vector get_v_from_field(int x_coord, int y_coord)
+__device__
+Vector get_v_from_field(int x_coord, int y_coord, Vector* vectors)
 {
     int index = y_coord*data_cols + x_coord;
     return vectors[index];
 }
 
-__global__
-Vector get_v_from_field(float x_coord, float y_coord)
+__device__
+Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
 {
     //Bilinear Interpolation
     //Get integer points around the given x and y
@@ -109,7 +158,7 @@ Vector get_v_from_field(float x_coord, float y_coord)
 
     if(ceil_x == floor_x && ceil_y == floor_y)//both are integers, no interpolation
     {
-        return get_v_from_field((int)x_coord, (int)y_coord);
+        return get_v_from_field((int)x_coord, (int)y_coord, vectors);
     }
 
     Vector R1{}, R2{};
@@ -131,10 +180,10 @@ Vector get_v_from_field(float x_coord, float y_coord)
     //Neither are integers
     //bilinear interpolation
     //Q11 - bottom left; Q12 - top left; Q21 - bottom right; Q22 - top right
-    Vector Q11 = get_v_from_field(floor_x, floor_y);
-    Vector Q12 = get_v_from_field(floor_x, ceil_y);
-    Vector Q21 = get_v_from_field(ceil_x, floor_y);
-    Vector Q22 = get_v_from_field(ceil_x, ceil_y);
+    Vector Q11 = get_v_from_field(floor_x, floor_y, vectors);
+    Vector Q12 = get_v_from_field(floor_x, ceil_y, vectors);
+    Vector Q21 = get_v_from_field(ceil_x, floor_y, vectors);
+    Vector Q22 = get_v_from_field(ceil_x, ceil_y), vectors;
 
     //Calculate R10
     R1 = interpolate(Q11, Q21, ceil_x, floor_x, x_coord);
@@ -154,7 +203,7 @@ Vector get_v_from_field(float x_coord, float y_coord)
    \[{P(x,y) = R_{1} \frac{y_{2}-y}{y_{2}-y_{1}} + R_{2} \frac{y-y_{1}}{y_{2}-y_{1}}} \tag{3}\]
  */
 
-__global__
+__device__
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
 {
     Vector temp1 = const_vect_mult((bigP - p) / (bigP - smallP), v1);
@@ -163,13 +212,13 @@ Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
     return returnVector;
 }
 
-__global__
-Vector get_v_from_field(Point p)
+__device__
+Vector get_v_from_field(Point p, Vector* vectors)
 {
-    return get_v_from_field(p.x_coord, p.y_coord);
+    return get_v_from_field(p.x_coord, p.y_coord, vectors);
 }
 
-__global__
+__device__
 Vector const_vect_mult(float c, Vector v)
 {
     Vector returnVector{};
@@ -178,7 +227,7 @@ Vector const_vect_mult(float c, Vector v)
     return returnVector;
 }
 
-__global__
+__device__
 Vector add_vectors(Vector v1, Vector v2)
 {
     Vector returnVector{};
@@ -187,6 +236,7 @@ Vector add_vectors(Vector v1, Vector v2)
     return returnVector;
 }
 
+__device__
 Point add_vector_point(Point p, Vector v)
 {
     Point returnPoint{};
@@ -195,8 +245,8 @@ Point add_vector_point(Point p, Vector v)
     return returnPoint;
 }
 
-__global__
-Point rungeKutta(Point p, float time_step)
+__device__
+Point rungeKutta(Point p, float time_step, Vector* vectors)
 {
     Vector k1{}, k2{}, k3{}, k4{};
 
@@ -204,15 +254,15 @@ Point rungeKutta(Point p, float time_step)
     // to find next value of y
     k1 = const_vect_mult(time_step, get_v_from_field(p));
     Point p1 = add_vector_point(p, const_vect_mult(.5, k1));
-    Vector v_1 = get_v_from_field(p1);
+    Vector v_1 = get_v_from_field(p1, vectors);
 
     k2 = const_vect_mult(time_step, v_1);
     Point p2 = add_vector_point(p, const_vect_mult(.5, k2));
-    Vector v_2 = get_v_from_field(p2);
+    Vector v_2 = get_v_from_field(p2, vectors);
 
     k3 = const_vect_mult(time_step, v_2);
     Point p3 = add_vector_point(p, k3);
-    Vector v_3 = get_v_from_field(p3);
+    Vector v_3 = get_v_from_field(p3, vectors);
 
     k4 = const_vect_mult(time_step, v_3);
     Vector tempSum = k1;
@@ -226,7 +276,7 @@ Point rungeKutta(Point p, float time_step)
 }
 //Algorithm from: https://web.cs.ucdavis.edu/~ma/ECS177/papers/particle_tracing.pdf
 
-__global__
+__device__
 bool not_in_range(Point p)
 {
     return p.x_coord < 0 || p.x_coord >= data_cols || p.y_coord < 0 || p.y_coord >= data_rows;
