@@ -34,24 +34,17 @@ Vector get_v_from_field(float x_coord, float y_coord);
 Vector get_v_from_field(Point p);
 Vector add_vectors(Vector v1, Vector v2);
 Point add_vector_point(Point p, Vector v);
-Point rungeKutta(Point p, float time_step);
+Point rungeKutta(Point p, float time_step, Vector* vectors);
 bool not_in_range(Point p);
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
 
 //I don't know if I can do this to variables...
-__global__
 int data_cols = 1300;
-__global__
 int data_rows = 600;
-__global__
-int stream_size = num_steps*data_rows*3;
-__global__
-int num_vectors = data_rows * data_cols;
-__global__
-int data_size = num_vectors*2;//2 floats per vector
-
-__global__
 int num_steps = 50;
+int stream_size = num_steps*data_rows*3;
+int num_vectors = data_rows * data_cols;
+int data_size = num_vectors*2;//2 floats per vector
 //TODO: define tile size variables (whatever they are)
 
 /**
@@ -65,13 +58,10 @@ void calculate_stream_lines(Vector* vectors, float* streams)//streams is the out
 {
     //Each thread calculates one stream
     int thread_id = blockIdx.x*blockDim.x + threadIdx.x;//TODO: make sure this is correct for 1D (this is the threadId)
-    int lines_per_thread = data_rows / thread_count;
 
-    int my_first_line = lines_per_thread * (thread_id); //the -1 is for the fact that 0 doesn't do this
-    int my_last_line = my_first_line + lines_per_thread - 1;
     float time_step = .2;
-
-    if(lineId >= data_rows) break; //passed the bottom row
+    int lineId = thread_id;
+    if(lineId >= data_rows) return; //passed the bottom row
     //initialize the starting point at the beginning of each new line
     Point current{};
     current.x_coord = 0;//Each streamline starts at the far left
@@ -84,8 +74,6 @@ void calculate_stream_lines(Vector* vectors, float* streams)//streams is the out
         if(not_in_range(current)) break;//The streamline has left the known vector field. This thread is done
         streams[startPoint + step] = lineId;
         streams[startPoint + ++step] = current.x_coord;
-        streams[startPoint + ++step] = current.y_coord;
-        current = rungeKutta(current, time_step, vectors);
     }
 }
 
@@ -114,7 +102,7 @@ int main() {
     }
 
     //Allocate spaced on the GPU for vectors, then copy up
-    cudaMalloc(vectors, size);
+    cudaMalloc(vectors, num_vectors);
     Vector* vectors_d;
     cudaMemcpy(vectors_d, vectors, num_vectors, cudaMemcpyHostToDevice);
 
