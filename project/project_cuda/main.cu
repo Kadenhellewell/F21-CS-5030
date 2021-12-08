@@ -1,5 +1,6 @@
 /**
  * compile: nvcc main.cu -o cuda_streams
+ * Request GPU: salloc -n 1 -N 1 -t 0:15:00 -p notchpeak-shared-short -A notchpeak-shared-short --gres=gpu:k80:1
  */
 
 
@@ -27,11 +28,11 @@ struct Point{
 __device__
 Vector const_vect_mult(float c, Vector v);
 __device__
-Vector get_v_from_field(int x_coord, int y_coord);
+Vector get_v_from_field(int x_coord, int y_coord, Vector* vectors);
 __device__
-Vector get_v_from_field(float x_coord, float y_coord);
+Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors);
 __device__
-Vector get_v_from_field(Point p);
+Vector get_v_from_field(Point p, Vector* vectors);
 __device__
 Vector add_vectors(Vector v1, Vector v2);
 __device__
@@ -85,7 +86,7 @@ void calculate_stream_lines(Vector* vectors, float* streams_d)//streams is the o
 
 
 int main() {
-    Vector* vectors;
+    Vector* vectors = new Vector[num_vectors];
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
 
     //Read in from file
@@ -111,19 +112,16 @@ int main() {
     Vector* vectors_d;
     cudaMalloc(&vectors_d, num_vectors);
     cudaMemcpy(vectors_d, vectors, num_vectors, cudaMemcpyHostToDevice);
-
     //initialize streams
     float* streams = new float[stream_size];
     for(int i = 0; i < stream_size; i++)
     {
         streams[i] = -1;
     }
-
     //allocate space for device results (GPU)
     float* streams_d;
     cudaMalloc(&streams_d, stream_size);
     cudaMemcpy(streams_d, streams, stream_size, cudaMemcpyHostToDevice);
-
     //I think I want 1D blocks, since each streamline starts in the first column. Not sure how to do that.
     //Set grid and block sizes
     dim3 DimGrid(1, 1, 1);// how many blocks
@@ -131,16 +129,16 @@ int main() {
 
     calculate_stream_lines<<<DimGrid, DimBlock>>>(vectors_d, streams_d);
     //copy results of calculating streams to host
-    cudaMemcpy(streams, streams_d, stream_size, cudaMemcpyDeviceToHost);
-
+    float* results = new float[stream_size];
+    cudaMemcpy(results, streams_d, stream_size, cudaMemcpyDeviceToHost);
     std::ofstream outFile("streamlines_cuda.csv", std::ios::app);
     //Parse results, groups of 3, line_id, coordinate_x, coordinate_y
     outFile << "line_id, coordinate_x, coordinate_y" << endl;
     //print local streams to file
     for(int j = 0; j < stream_size; j++)
     {
-        if(streams[j] != -1)
-            outFile << streams[j] << ", " << streams[++j] << ", " << streams[++j] << endl;
+        if(results[j] != -1)
+            outFile << results[j] << ", " << results[++j] << ", " << results[++j] << endl;
     }
     cudaFree(vectors);
     cudaFree(streams_d);
@@ -190,15 +188,15 @@ Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
     //Linear interpolation
     if(ceil_x == floor_x) //x is an integer, y is not
     {
-        R1 = get_v_from_field((int)x_coord, floor_y);
-        R2 = get_v_from_field((int)x_coord, ceil_y);
+        R1 = get_v_from_field((int)x_coord, floor_y, vectors);
+        R2 = get_v_from_field((int)x_coord, ceil_y, vectors);
         return interpolate(R1, R2, ceil_y, floor_y, y_coord);
     }
 
     if(ceil_y == floor_y)//y is an integer, x is not
     {
-        R1 = get_v_from_field(floor_x, (int)y_coord);
-        R2 = get_v_from_field(ceil_x, (int)y_coord);
+        R1 = get_v_from_field(floor_x, (int)y_coord, vectors);
+        R2 = get_v_from_field(ceil_x, (int)y_coord, vectors);
         return interpolate(R1, R2, ceil_x, floor_x, x_coord);
     }
 
@@ -320,7 +318,7 @@ Point rungeKutta(Point p, float time_step, Vector* vectors)
 
     // Apply Runge Kutta Formulas
     // to find next value of y
-    k1 = const_vect_mult(time_step, get_v_from_field(p));
+    k1 = const_vect_mult(time_step, get_v_from_field(p, vectors));
     Point p1 = add_vector_point(p, const_vect_mult(.5, k1));
     if(not_in_range(p1)) return failPoint;
     Vector v_1 = get_v_from_field(p1, vectors);
