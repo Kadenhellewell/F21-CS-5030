@@ -40,8 +40,9 @@ int my_rank; //Rank of current process
 int num_steps = 15;
 int data_cols = 1300;
 int data_rows = 600;
-int stream_size = num_steps*3;
-//for a total of 780,000 vectors
+int stream_size = num_steps*3;//This size is different as each process has its own, smaller array
+int num_vectors = data_rows * data_cols;
+int data_size = num_vectors*2;//2 floats per vector
 Vector* vectors;
 
 int main(int argc, char* argv[])
@@ -51,60 +52,58 @@ int main(int argc, char* argv[])
     MPI_Comm_size(comm, &comm_sz);
     MPI_Comm_rank(comm, &my_rank);
     int lines_per_proc = data_rows / (comm_sz - 1);//the -1 is for the fact that 0 doesn't do this
-    int data_size = data_rows*data_cols*2;
-    vectors = new Vector[data_size];
+    vectors = new Vector[num_vectors];
     if(my_rank == 0)
     {
+        //Read vectors from file
         std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
-        float * buffer;
-        if (inFile)
+        float f;
+        int k = 0;
+        float * data = new float[data_size];
+        while (inFile.read(reinterpret_cast<char*>(&f), sizeof(float)))
         {
-            // get length of file:
-            inFile.seekg (0, inFile.end);
-            int length = inFile.tellg();
-            inFile.seekg (0, inFile.beg);
-            buffer = new float[length / sizeof(float)];
+            data[k] = f;
+            k++;
+        }
 
-            std::cout << "Reading " << length << " characters... " << endl;
-            // read data as a block:
-            inFile.read ((char*)buffer, length);
-            inFile.close();
-
-            //Set up vector of vectors
-            for(unsigned int i = 0; i < length / sizeof(float); i++)
-            {
-                Vector thisVector{};
-                thisVector.x_val = buffer[i];
-                thisVector.y_val = buffer[++i];
-                vectors[i] = thisVector;
-            }
+        //set vector objects
+        for(int i = 0; i < data_size; i++)
+        {
+            int index = i/2;//i will always be even at this point
+            Vector thisVector{};
+            thisVector.x_val = data[i];
+            thisVector.y_val = data[++i];
+            vectors[index] = thisVector;
         }
     }
 
-    //TODO: not all processes have access to the vectors
     MPI_Barrier(comm);
+    //TODO: not all processes have access to the vectors
     MPI_Bcast(vectors, data_size, MPI_FLOAT, 0, comm);
     if(my_rank != 0)
     {
         int my_first = lines_per_proc*(my_rank - 1); //the -1 is for the fact that 0 doesn't do this
-        int my_last = my_first + lines_per_proc; //inclusive
-        float initial_x = 0;//all streamlines start at x=0
-        float initial_y = my_first;
+        int my_last = my_first + lines_per_proc - 1;
         float time_step = .2;
         //create string array; store output lines there
-        float* streams = new float[stream_size];//This is where the output will be stored
-        Point current{};
-        current.x_coord = initial_x;
-        current.y_coord = initial_y;
+        float* local_streams = new float[stream_size];//This is where the output will be stored
+        for(int i = 0; i < stream_size; i++)
+            local_streams[i] = -1;
+        int startPoint = 0;
         for(int lineId = my_first; lineId <= my_last; lineId++)
         {
+            Point current{};
+            current.x_coord = 0;
+            current.y_coord = lineId;
+            if(lineId > my_first)
+                startPoint = (lineId - my_first)*num_steps*3 + 1;
             if(lineId >= data_rows) break; //passed the bottom row
             for(int step = 0; step < num_steps*3; step++)//each 'step' fills out 3 elements of the array
             {
                 if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.
-                streams[step] = lineId;
-                streams[++step] = current.x_coord;
-                streams[++step] = current.y_coord;
+                local_streams[startPoint + step] = lineId;
+                local_streams[startPoint + ++step] = current.x_coord;
+                local_streams[startPoint + ++step] = current.y_coord;
                 current = rungeKutta(current, time_step);
             }
         }
@@ -121,7 +120,8 @@ int main(int argc, char* argv[])
             MPI_Recv(incoming_lines, stream_size, MPI_FLOAT, i, 0, comm, MPI_STATUS_IGNORE);
             //print local streams to file
             for(int j = 0; j < stream_size; j++)
-                outFile << incoming_lines[j] << ", " << incoming_lines[++j] << ", " << incoming_lines[++j] << endl;
+                if(incoming_lines[j] != -1)
+                    outFile << incoming_lines[j] << ", " << incoming_lines[++j] << ", " << incoming_lines[++j] << endl;
             delete[] incoming_lines;
 	    cout << "Done with " << i << endl;
         }
@@ -285,19 +285,25 @@ Point add_vector_point(Point p, Vector v)
 Point rungeKutta(Point p, float time_step)
 {
     Vector k1{}, k2{}, k3{}, k4{};
+    Point failPoint{};
+    failPoint.x_coord = -1;
+    failPoint.y_coord = -1;
 
     // Apply Runge Kutta Formulas
     // to find next value of y
     k1 = const_vect_mult(time_step, get_v_from_field(p));
     Point p1 = add_vector_point(p, const_vect_mult(.5, k1));
+    if(not_in_range(p1)) return failPoint;
     Vector v_1 = get_v_from_field(p1);
 
     k2 = const_vect_mult(time_step, v_1);
     Point p2 = add_vector_point(p, const_vect_mult(.5, k2));
+    if(not_in_range(p2)) return failPoint;
     Vector v_2 = get_v_from_field(p2);
 
     k3 = const_vect_mult(time_step, v_2);
     Point p3 = add_vector_point(p, k3);
+    if(not_in_range(p3)) return failPoint;
     Vector v_3 = get_v_from_field(p3);
 
     k4 = const_vect_mult(time_step, v_3);

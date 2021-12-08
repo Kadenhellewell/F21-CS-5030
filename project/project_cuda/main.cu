@@ -317,19 +317,25 @@ __device__
 Point rungeKutta(Point p, float time_step, Vector* vectors)
 {
     Vector k1{}, k2{}, k3{}, k4{};
+    Point failPoint{};
+    failPoint.x_coord = -1;
+    failPoint.y_coord = -1;
 
     // Apply Runge Kutta Formulas
     // to find next value of y
     k1 = const_vect_mult(time_step, get_v_from_field(p));
     Point p1 = add_vector_point(p, const_vect_mult(.5, k1));
+    if(not_in_range(p1)) return failPoint;
     Vector v_1 = get_v_from_field(p1, vectors);
 
     k2 = const_vect_mult(time_step, v_1);
     Point p2 = add_vector_point(p, const_vect_mult(.5, k2));
+    if(not_in_range(p2)) return failPoint;
     Vector v_2 = get_v_from_field(p2, vectors);
 
     k3 = const_vect_mult(time_step, v_2);
     Point p3 = add_vector_point(p, k3);
+    if(not_in_range(p3)) return failPoint;
     Vector v_3 = get_v_from_field(p3, vectors);
 
     k4 = const_vect_mult(time_step, v_3);
