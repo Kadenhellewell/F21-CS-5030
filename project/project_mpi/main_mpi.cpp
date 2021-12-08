@@ -65,7 +65,6 @@ int main(int argc, char* argv[])
             data[k] = f;
             k++;
         }
-	    cout << "I can read the file" << endl;
         //set vector objects
         for(int i = 0; i < data_size; i++)
         {
@@ -75,7 +74,6 @@ int main(int argc, char* argv[])
             thisVector.y_val = data[++i];
             vectors[index] = thisVector;
         }
-	    cout << "I can set the vectors" << endl;
     }
 
     MPI_Barrier(comm);
@@ -90,7 +88,6 @@ int main(int argc, char* argv[])
         //initialize local streams
 	    for(int i = 0; i < stream_size; i++)
             local_streams[i] = -1;
-	    cout << "I can set local streams " << my_rank << endl;
         int startPoint = 0;
         for(int lineId = my_first; lineId <= my_last; lineId++)
         {
@@ -109,34 +106,30 @@ int main(int argc, char* argv[])
                 current = rungeKutta(current, time_step);
             }
         }
-	    cout << "I can do my computations; on to sending " << my_rank << endl;
         MPI_Send(local_streams, stream_size, MPI_FLOAT, 0, 0, comm);
-        delete[] local_streams;
-	    cout << "I was able to send " << my_rank << endl;
+        //delete[] local_streams;
     }
 
     if(my_rank == 0)
     {
         std::ofstream outFile("streamlines_mpi.csv", std::ios::app);
 	    outFile << "line_id, coordinate_x, coordinate_y" << endl;
-	    cout << "Starting the coming together" << endl;
         for(int i = 1; i < comm_sz; i++)
         {
 	        float *incoming_lines = new float[stream_size];
             MPI_Recv(incoming_lines, stream_size, MPI_FLOAT, i, 0, comm, MPI_STATUS_IGNORE);
-	        cout << "Received form " << i << endl;
             //print local streams to file
             for(int j = 0; j < stream_size; j++)
                 if(incoming_lines[j] != -1)
                     outFile << incoming_lines[j] << ", " << incoming_lines[++j] << ", " << incoming_lines[++j] << endl;
-	        cout << "Finished writing for " << i << endl;
             delete[] incoming_lines;
-	        cout << "Done with " << i << endl;
         }
     }
 
+    MPI_Barrier(comm);
     delete[] vectors;
     delete[] data;
+    cout << "I get here " << my_rank << endl;
     MPI_Finalize();
     return 0;
 }

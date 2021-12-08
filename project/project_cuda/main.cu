@@ -26,16 +26,24 @@ struct Point{
 
 
 
-void get_args(int argc, char* argv[]);
 
+__device__
 Vector const_vect_mult(float c, Vector v);
+__device__
 Vector get_v_from_field(int x_coord, int y_coord);
+__device__
 Vector get_v_from_field(float x_coord, float y_coord);
+__device__
 Vector get_v_from_field(Point p);
+__device__
 Vector add_vectors(Vector v1, Vector v2);
+__device__
 Point add_vector_point(Point p, Vector v);
+__device__
 Point rungeKutta(Point p, float time_step, Vector* vectors);
+__device__
 bool not_in_range(Point p);
+__device__
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
 
 //I don't know if I can do this to variables...
@@ -123,7 +131,7 @@ int main() {
     dim3 DimGrid(1, 1, 1);// how many blocks
     dim3 DimBlock(600, 1, 1);// how many threads per block
 
-    calculate_stream_lines<<<dimGrid, dimBlock>>>(vectors_d, streams_d);
+    calculate_stream_lines<<<DimGrid, DimBlock>>>(vectors_d, streams_d);
     //copy results of calculating streams to host
     cudaMemcpy(streams, streams_d, stream_size, cudaMemcpyDeviceToHost);
 
