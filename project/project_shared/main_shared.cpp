@@ -31,19 +31,18 @@ bool not_in_range(Point p);
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
 void calculate_streamlines(int thread_count, float* streams);
 
-int num_steps = 15;
+int num_steps = 100;
+//These values (below) are hardcoded for the expected dataset.
 int data_cols = 1300;
 int data_rows = 600;
 int stream_size = num_steps*data_rows*3;
-//for a total of 780,000 vectors
+int num_vectors = data_rows * data_cols;
+int data_size = num_vectors*2;//2 floats per vector
 Vector* vectors;
 
 int main()
 {
     int thread_count = 6;
-
-    int num_vectors = data_rows * data_cols;//i.e. number of vectors (floats)
-    int data_size = num_vectors*2;//2 floats per vector
     vectors = new Vector[num_vectors];
 
     //Read vectors from file
@@ -108,8 +107,6 @@ void calculate_streamlines(int thread_count, float* streams)
             int my_first_line = lines_per_thread * (i); //the -1 is for the fact that 0 doesn't do this
             int my_last_line = my_first_line + lines_per_thread - 1;
             float time_step = .2;
-            //create string array; store output lines there
-            mutex mut;
             int startPoint = 0;
             for(int lineId = my_first_line; lineId <= my_last_line; lineId++)
             {

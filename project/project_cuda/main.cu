@@ -43,7 +43,12 @@ __global__
 int data_cols = 1300;
 __global__
 int data_rows = 600;
-//for a total of 780,000 vectors
+__global__
+int stream_size = num_steps*data_rows*3;
+__global__
+int num_vectors = data_rows * data_cols;
+__global__
+int data_size = num_vectors*2;//2 floats per vector
 
 __global__
 int num_steps = 50;
@@ -59,21 +64,28 @@ __device__
 void calculate_stream_lines(Vector* vectors, float* streams)//streams is the output
 {
     //Each thread calculates one stream
-    int lineId = blockIdx.x*blockDim.x + threadIdx.x;//TODO: make sure this is correct for 1D (this is the threadId)
-    int startPoint = i*num_steps*3;
+    int thread_id = blockIdx.x*blockDim.x + threadIdx.x;//TODO: make sure this is correct for 1D (this is the threadId)
+    int lines_per_thread = data_rows / thread_count;
+
+    int my_first_line = lines_per_thread * (thread_id); //the -1 is for the fact that 0 doesn't do this
+    int my_last_line = my_first_line + lines_per_thread - 1;
+    float time_step = .2;
+
+    if(lineId >= data_rows) break; //passed the bottom row
+    //initialize the starting point at the beginning of each new line
     Point current{};
-    current.x_coord = initial_x;
-    current.y_coord = initial_y;
-    if(lineId >= data_cols) break; //passed the bottom row
-    current.x_coord = 0;//Start at 0 in the x direction
-    current.y_coord = lineId;//row determined by thread id
-    for(int step = 0; step < num_steps*3; step++)//each 'step' needs to populate 3 elements of the array
+    current.x_coord = 0;//Each streamline starts at the far left
+    current.y_coord = lineId;
+    int startPoint = 0;
+    if(lineId > 0) //0 is an edge case in this calculation
+        startPoint = lineId*num_steps*3 + 1;
+    for(int step = 0; step < num_steps*3; step++)//each 'step' fills out 3 elements of the array
     {
         if(not_in_range(current)) break;//The streamline has left the known vector field. This thread is done
-        streams[startPoint] = lineId;
-        streams[startPoint + (++step)] = current.x_coord;
-        streams[startPoint + (++step)] = current.y_coord;
-        current = rungeKutta(current, time_step);
+        streams[startPoint + step] = lineId;
+        streams[startPoint + ++step] = current.x_coord;
+        streams[startPoint + ++step] = current.y_coord;
+        current = rungeKutta(current, time_step, vectors);
     }
 }
 
@@ -81,61 +93,60 @@ void calculate_stream_lines(Vector* vectors, float* streams)//streams is the out
 int main() {
     Vector* vectors;
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
-    std::ofstream outFile("streamlines_cuda.csv", std::ios::app);
-    int stream_size = num_steps*data_rows*3;//data_rows streams, num_steps per stream, 3 floats per step: line_id, coordinate_x, coordinate_y
 
-    float * buffer = nullptr;
-    int size;
-    if (inFile) {
-        // get length of file:
-        inFile.seekg (0, inFile.end);
-        int length = inFile.tellg();
-        inFile.seekg (0, inFile.beg);
-        size = length / sizeof(float);
-        buffer = new float[size];
-
-        std::cout << "Reading " << length << " characters... " << endl;
-        // read data as a block:
-        inFile.read ((char*)buffer, length);
-
-        if (inFile)
-            std::cout << "all characters read successfully." << endl;
-        else
-            std::cout << "error: only " << inFile.gcount() << " could be read";
-        inFile.close();
-
-
-        //Set up vector of vectors
-        for(unsigned int i = 0; i < size; i++)
-        {
-            Vector thisVector{};
-            thisVector.x_val = buffer[i];
-            thisVector.y_val = buffer[++i];
-            vectors[i] = thisVector;
-        }
-        //Allocate spaced on the GPU for vectors, then copy up
-        cudaMalloc(vectors, size);
-        Vector* vectors_d;
-        cudaMemcpy(vectors_d, vectors, size, cudaMemcpyHostToDevice);
+    //Read in from file
+    float f;
+    int k = 0;
+    float * data = new float[data_size];
+    while (inFile.read(reinterpret_cast<char*>(&f), sizeof(float)))
+    {
+        data[k] = f;
+        k++;
     }
+    //set vector objects
+    for(int i = 0; i < data_size; i++)
+    {
+        int index = i/2;//i will always be even at this point
+        Vector thisVector{};
+        thisVector.x_val = data[i];
+        thisVector.y_val = data[++i];
+        vectors[index] = thisVector;
+    }
+
+    //Allocate spaced on the GPU for vectors, then copy up
+    cudaMalloc(vectors, size);
+    Vector* vectors_d;
+    cudaMemcpy(vectors_d, vectors, num_vectors, cudaMemcpyHostToDevice);
+
+    //initialize streams
+    float* streams = new float[stream_size];
+    for(int i = 0; i < stream_size; i++)
+    {
+        streams[i] = -1;
+    }
+
     //allocate space for device results (GPU)
     float* streams_d;
     cudaMalloc(streams_d, stream_size);
+    cudaMemcpy(streams_d, streams, stream_size, cudaMemcpyHostToDevice);
 
     //I think I want 1D blocks, since each streamline starts in the first column. Not sure how to do that.
     //Set grid and block sizes
-    dim3 dimGrid;// how many blocks
-    dim3 dimBlock;// how many threads per block
+    dim3 DimGrid(1, 1, 1);// how many blocks
+    dim3 DimBlock(600, 1, 1);// how many threads per block
 
-    calculate_stream_lines<<<dimGrid, dimBlock>>>(vectors, streams_d);
+    calculate_stream_lines<<<dimGrid, dimBlock>>>(vectors_d, streams_d);
     //copy results of calculating streams to host
-    float* results;
-    cudaMemcpy(results, streams_d, stream_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(streams, streams_d, stream_size, cudaMemcpyDeviceToHost);
+
+    std::ofstream outFile("streamlines_cuda.csv", std::ios::app);
     //Parse results, groups of 3, line_id, coordinate_x, coordinate_y
     outFile << "line_id, coordinate_x, coordinate_y" << endl;
-    for(int line = 0; line < stream_size; line++)
+    //print local streams to file
+    for(int j = 0; j < stream_size; j++)
     {
-        outFile << results[line] << ", " << results[++line] << ", " << results[++line] << endl;
+        if(streams[j] != -1)
+            outFile << streams[j] << ", " << streams[++j] << ", " << streams[++j] << endl;
     }
     return 0;
 }
