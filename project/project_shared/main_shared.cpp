@@ -29,6 +29,7 @@ Point add_vector_point(Point p, Vector v);
 Point rungeKutta(Point p, float time_step);
 bool not_in_range(Point p);
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
+void calculate_streamlines(int thread_count, float* streams);
 
 int num_steps = 15;
 int data_cols = 1300;
@@ -40,36 +41,66 @@ Vector* vectors;
 int main()
 {
     int thread_count = 6;
-    int lines_per_thread = data_rows / thread_count;//the -1 is for the fact that 0 doesn't do this
+
     int num_vectors = data_rows * data_cols;//i.e. number of vectors (floats)
     int data_size = num_vectors*2;//2 floats per vector
     vectors = new Vector[num_vectors];
 
+    //Read vectors from file
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
     float f;
     int k = 0;
-    float * buffer = new float[data_size];
+    float * data = new float[data_size];
     while (inFile.read(reinterpret_cast<char*>(&f), sizeof(float)))
     {
-        buffer[k] = f;
+        data[k] = f;
         k++;
     }
 
+    //set vector objects
     for(int i = 0; i < data_size; i++)
     {
-        int index = i/2;//i should always be even at this point
+        int index = i/2;//i will always be even at this point
         Vector thisVector{};
-        thisVector.x_val = buffer[i];
-        thisVector.y_val = buffer[++i];
+        thisVector.x_val = data[i];
+        thisVector.y_val = data[++i];
         vectors[index] = thisVector;
     }
 
-    //create threads
+    //initialize streams
     auto* streams = new float[stream_size];//This is where the output will be stored
     for(int i = 0; i < stream_size; i++)
     {
         streams[i] = -1;
     }
+
+    calculate_streamlines(thread_count, streams);
+
+    //Write results to file
+    std::ofstream outFile("streamlines_shared.csv", std::ios::app);
+    outFile << "line_id, coordinate_x, coordinate_y" << endl;
+
+    //print local streams to file
+    for(int j = 0; j < stream_size; j++)
+    {
+        if(streams[j] != -1)
+            outFile << streams[j] << ", " << streams[++j] << ", " << streams[++j] << endl;
+    }
+    outFile.close();
+    delete[] streams;
+    delete[] data;
+
+    return 0;
+}
+
+/**
+ * Run the calculation
+ * @param thread_count number of threads
+ * @param streams array in which to store results (initialize values before this)
+ */
+void calculate_streamlines(int thread_count, float* streams)
+{
+    int lines_per_thread = data_rows / thread_count;
     thread threads[thread_count];
     for(int i = 0; i < thread_count; i++)
     {
@@ -82,14 +113,15 @@ int main()
             int startPoint = 0;
             for(int lineId = my_first_line; lineId <= my_last_line; lineId++)
             {
+                if(lineId >= data_rows) break; //passed the bottom row
+
+                //initialize the starting point at the beginning of each new line
                 Point current{};
                 current.x_coord = 0;//Each streamline starts at the far left
                 current.y_coord = lineId;
-                if(lineId > 0) {
+                if(lineId > 0) //0 is an edge case in this calculation
                     startPoint = lineId*num_steps*3 + 1;
-                }
 
-                if(lineId >= data_rows) break; //passed the bottom row
                 for(int step = 0; step < num_steps*3; step++)//each 'step' fills out 3 elements of the array
                 {
                     if(not_in_range(current)) break;//The streamline has left the known vector field. This thread is done
@@ -105,20 +137,6 @@ int main()
     {
         threads[i].join();
     }
-
-    std::ofstream outFile("streamlines_shared.csv", std::ios::app);
-    outFile << "line_id, coordinate_x, coordinate_y" << endl;
-
-    //print local streams to file
-    for(int j = 0; j < stream_size; j++)
-    {
-        if(streams[j] != -1)
-            outFile << streams[j] << ", " << streams[++j] << ", " << streams[++j] << endl;
-    }
-    outFile.close();
-    delete[] streams;
-
-    return 0;
 }
 
 /**
