@@ -24,9 +24,6 @@ struct Point{
     float y_coord;
 };
 
-
-
-
 __device__
 Vector const_vect_mult(float c, Vector v);
 __device__
@@ -46,13 +43,12 @@ bool not_in_range(Point p);
 __device__
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
 
-//I don't know if I can do this to variables...
-int data_cols = 1300;
-int data_rows = 600;
-int num_steps = 50;
-int stream_size = num_steps*data_rows*3;
-int num_vectors = data_rows * data_cols;
-int data_size = num_vectors*2;//2 floats per vector
+const int data_cols = 1300;
+const int data_rows = 600;
+const int num_steps = 50;
+const int stream_size = num_steps*data_rows*3;
+const int num_vectors = data_rows * data_cols;
+const int data_size = num_vectors*2;//2 floats per vector
 //TODO: define tile size variables (whatever they are)
 
 /**
@@ -61,8 +57,8 @@ int data_size = num_vectors*2;//2 floats per vector
  * @param vectors the vector field
  * @param streams the output array - floats, a multiple of 3, in the order line_id, coordinate_x, coordinate_y
  */
-__device__
-void calculate_stream_lines(Vector* vectors, float* streams)//streams is the output
+__global__
+void calculate_stream_lines(Vector* vectors, float* streams_d)//streams is the output
 {
     //Each thread calculates one stream
     int thread_id = blockIdx.x*blockDim.x + threadIdx.x;//TODO: make sure this is correct for 1D (this is the threadId)
@@ -80,8 +76,10 @@ void calculate_stream_lines(Vector* vectors, float* streams)//streams is the out
     for(int step = 0; step < num_steps*3; step++)//each 'step' fills out 3 elements of the array
     {
         if(not_in_range(current)) break;//The streamline has left the known vector field. This thread is done
-        streams[startPoint + step] = lineId;
-        streams[startPoint + ++step] = current.x_coord;
+        streams_d[startPoint + step] = lineId;
+        streams_d[startPoint + ++step] = current.x_coord;
+        streams_d[startPoint + ++step] = current.y_coord;
+        current = rungeKutta(current, time_step, vectors);
     }
 }
 
@@ -110,8 +108,8 @@ int main() {
     }
 
     //Allocate spaced on the GPU for vectors, then copy up
-    cudaMalloc(vectors, num_vectors);
     Vector* vectors_d;
+    cudaMalloc(&vectors_d, num_vectors);
     cudaMemcpy(vectors_d, vectors, num_vectors, cudaMemcpyHostToDevice);
 
     //initialize streams
@@ -123,7 +121,7 @@ int main() {
 
     //allocate space for device results (GPU)
     float* streams_d;
-    cudaMalloc(streams_d, stream_size);
+    cudaMalloc(&streams_d, stream_size);
     cudaMemcpy(streams_d, streams, stream_size, cudaMemcpyHostToDevice);
 
     //I think I want 1D blocks, since each streamline starts in the first column. Not sure how to do that.
@@ -144,6 +142,9 @@ int main() {
         if(streams[j] != -1)
             outFile << streams[j] << ", " << streams[++j] << ", " << streams[++j] << endl;
     }
+    cudaFree(vectors);
+    cudaFree(streams_d);
+    delete[] streams;
     return 0;
 }
 
@@ -207,7 +208,7 @@ Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
     Vector Q11 = get_v_from_field(floor_x, floor_y, vectors);
     Vector Q12 = get_v_from_field(floor_x, ceil_y, vectors);
     Vector Q21 = get_v_from_field(ceil_x, floor_y, vectors);
-    Vector Q22 = get_v_from_field(ceil_x, ceil_y), vectors;
+    Vector Q22 = get_v_from_field(ceil_x, ceil_y, vectors);
 
     //Calculate R10
     R1 = interpolate(Q11, Q21, ceil_x, floor_x, x_coord);
