@@ -53,19 +53,19 @@ int main(int argc, char* argv[])
     MPI_Comm_rank(comm, &my_rank);
     int lines_per_proc = data_rows / (comm_sz - 1);//the -1 is for the fact that 0 doesn't do this
     vectors = new Vector[num_vectors];
+    float * data = new float[data_size];
     if(my_rank == 0)
     {
         //Read vectors from file
         std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
         float f;
         int k = 0;
-        float * data = new float[data_size];
         while (inFile.read(reinterpret_cast<char*>(&f), sizeof(float)))
         {
             data[k] = f;
             k++;
         }
-
+	    cout << "I can read the file" << endl;
         //set vector objects
         for(int i = 0; i < data_size; i++)
         {
@@ -75,20 +75,22 @@ int main(int argc, char* argv[])
             thisVector.y_val = data[++i];
             vectors[index] = thisVector;
         }
+	    cout << "I can set the vectors" << endl;
     }
 
     MPI_Barrier(comm);
     //TODO: not all processes have access to the vectors
-    MPI_Bcast(vectors, data_size, MPI_FLOAT, 0, comm);
+    MPI_Bcast(vectors, data_size, MPI_FLOAT, 0, comm);//We broadcast data_size instead of num_vectors because the datatype is float
     if(my_rank != 0)
     {
         int my_first = lines_per_proc*(my_rank - 1); //the -1 is for the fact that 0 doesn't do this
         int my_last = my_first + lines_per_proc - 1;
         float time_step = .2;
-        //create string array; store output lines there
         float* local_streams = new float[stream_size];//This is where the output will be stored
-        for(int i = 0; i < stream_size; i++)
+        //initialize local streams
+	    for(int i = 0; i < stream_size; i++)
             local_streams[i] = -1;
+	    cout << "I can set local streams " << my_rank << endl;
         int startPoint = 0;
         for(int lineId = my_first; lineId <= my_last; lineId++)
         {
@@ -107,26 +109,34 @@ int main(int argc, char* argv[])
                 current = rungeKutta(current, time_step);
             }
         }
-        MPI_Send(streams, stream_size, MPI_FLOAT, 0, 0, comm);
+	    cout << "I can do my computations; on to sending " << my_rank << endl;
+        MPI_Send(local_streams, stream_size, MPI_FLOAT, 0, 0, comm);
+        delete[] local_streams;
+	    cout << "I was able to send " << my_rank << endl;
     }
 
     if(my_rank == 0)
     {
         std::ofstream outFile("streamlines_mpi.csv", std::ios::app);
 	    outFile << "line_id, coordinate_x, coordinate_y" << endl;
+	    cout << "Starting the coming together" << endl;
         for(int i = 1; i < comm_sz; i++)
         {
 	        float *incoming_lines = new float[stream_size];
             MPI_Recv(incoming_lines, stream_size, MPI_FLOAT, i, 0, comm, MPI_STATUS_IGNORE);
+	        cout << "Received form " << i << endl;
             //print local streams to file
             for(int j = 0; j < stream_size; j++)
                 if(incoming_lines[j] != -1)
                     outFile << incoming_lines[j] << ", " << incoming_lines[++j] << ", " << incoming_lines[++j] << endl;
+	        cout << "Finished writing for " << i << endl;
             delete[] incoming_lines;
-	    cout << "Done with " << i << endl;
+	        cout << "Done with " << i << endl;
         }
     }
 
+    delete[] vectors;
+    delete[] data;
     MPI_Finalize();
     return 0;
 }
