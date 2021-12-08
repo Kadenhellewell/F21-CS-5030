@@ -1,19 +1,16 @@
-/**
- * compile: nvcc main.cu -o cuda_streams
- */
-
-
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <mpi.h>
+#include <sstream>
 
 using namespace std;
 
-
-
-
-//These are separate structs to aid is differentiating points and vectors
+//These are separate structs to aid in differentiating points and vectors
 struct Vector{
     float x_val;
     float y_val;
@@ -23,8 +20,6 @@ struct Point{
     float x_coord;
     float y_coord;
 };
-
-
 
 void get_args(int argc, char* argv[]);
 
@@ -38,105 +33,101 @@ Point rungeKutta(Point p, float time_step);
 bool not_in_range(Point p);
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p);
 
-//I don't know if I can do this to variables...
-__global__
+MPI_Comm comm;
+int comm_sz; //Number of Process
+int my_rank; //Rank of current process
+
+int num_steps = 15;
 int data_cols = 1300;
-__global__
 int data_rows = 600;
+int stream_size = num_steps*3;
 //for a total of 780,000 vectors
+Vector* vectors;
 
-__global__
-int num_steps = 50;
-//TODO: define tile size variables (whatever they are)
-
-/**
- * Starting at the far left, calculate stream lines going to the right.
- * Each thread calculates one streamline. The row is determined by its id.
- * @param vectors the vector field
- * @param streams the output array - floats, a multiple of 3, in the order line_id, coordinate_x, coordinate_y
- */
-__device__
-void calculate_stream_lines(Vector* vectors, float* streams)//streams is the output
+int main(int argc, char* argv[])
 {
-    //Each thread calculates one stream
-    int lineId = blockIdx.x*blockDim.x + threadIdx.x;//TODO: make sure this is correct for 1D (this is the threadId)
-    int startPoint = i*num_steps*3;
-    Point current{};
-    current.x_coord = initial_x;
-    current.y_coord = initial_y;
-    if(lineId >= data_cols) break; //passed the bottom row
-    current.x_coord = 0;//Start at 0 in the x direction
-    current.y_coord = lineId;//row determined by thread id
-    for(int step = 0; step < num_steps*3; step++)//each 'step' needs to populate 3 elements of the array
+    MPI_Init(&argc, &argv);
+    comm = MPI_COMM_WORLD;
+    MPI_Comm_size(comm, &comm_sz);
+    MPI_Comm_rank(comm, &my_rank);
+    int lines_per_proc = data_rows / (comm_sz - 1);//the -1 is for the fact that 0 doesn't do this
+    int data_size = data_rows*data_cols*2;
+    vectors = new Vector[data_size];
+    if(my_rank == 0)
     {
-        if(not_in_range(current)) break;//The streamline has left the known vector field. This thread is done
-        streams[startPoint] = lineId;
-        streams[startPoint + (++step)] = current.x_coord;
-        streams[startPoint + (++step)] = current.y_coord;
-        current = rungeKutta(current, time_step);
-    }
-}
-
-
-int main() {
-    Vector* vectors;
-    std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
-    std::ofstream outFile("streamlines_cuda.csv", std::ios::app);
-    int stream_size = num_steps*data_rows*3;//data_rows streams, num_steps per stream, 3 floats per step: line_id, coordinate_x, coordinate_y
-
-    float * buffer = nullptr;
-    int size;
-    if (inFile) {
-        // get length of file:
-        inFile.seekg (0, inFile.end);
-        int length = inFile.tellg();
-        inFile.seekg (0, inFile.beg);
-        size = length / sizeof(float);
-        buffer = new float[size];
-
-        std::cout << "Reading " << length << " characters... " << endl;
-        // read data as a block:
-        inFile.read ((char*)buffer, length);
-
+        std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
+        float * buffer;
         if (inFile)
-            std::cout << "all characters read successfully." << endl;
-        else
-            std::cout << "error: only " << inFile.gcount() << " could be read";
-        inFile.close();
-
-
-        //Set up vector of vectors
-        for(unsigned int i = 0; i < size; i++)
         {
-            Vector thisVector{};
-            thisVector.x_val = buffer[i];
-            thisVector.y_val = buffer[++i];
-            vectors[i] = thisVector;
+            // get length of file:
+            inFile.seekg (0, inFile.end);
+            int length = inFile.tellg();
+            inFile.seekg (0, inFile.beg);
+            buffer = new float[length / sizeof(float)];
+
+            std::cout << "Reading " << length << " characters... " << endl;
+            // read data as a block:
+            inFile.read ((char*)buffer, length);
+            inFile.close();
+
+            //Set up vector of vectors
+            for(unsigned int i = 0; i < length / sizeof(float); i++)
+            {
+                Vector thisVector{};
+                thisVector.x_val = buffer[i];
+                thisVector.y_val = buffer[++i];
+                vectors[i] = thisVector;
+            }
         }
-        //Allocate spaced on the GPU for vectors, then copy up
-        cudaMalloc(vectors, size);
-        Vector* vectors_d;
-        cudaMemcpy(vectors_d, vectors, size, cudaMemcpyHostToDevice);
     }
-    //allocate space for device results (GPU)
-    float* streams_d;
-    cudaMalloc(streams_d, stream_size);
 
-    //I think I want 1D blocks, since each streamline starts in the first column. Not sure how to do that.
-    //Set grid and block sizes
-    dim3 dimGrid;// how many blocks
-    dim3 dimBlock;// how many threads per block
-
-    calculate_stream_lines<<<dimGrid, dimBlock>>>(vectors, streams_d);
-    //copy results of calculating streams to host
-    float* results;
-    cudaMemcpy(results, streams_d, stream_size, cudaMemcpyDeviceToHost);
-    //Parse results, groups of 3, line_id, coordinate_x, coordinate_y
-    outFile << "line_id, coordinate_x, coordinate_y" << endl;
-    for(int line = 0; line < stream_size; line++)
+    //TODO: not all processes have access to the vectors
+    MPI_Barrier(comm);
+    MPI_Bcast(vectors, data_size, MPI_FLOAT, 0, comm);
+    if(my_rank != 0)
     {
-        outFile << results[line] << ", " << results[++line] << ", " << results[++line] << endl;
+        int my_first = lines_per_proc*(my_rank - 1); //the -1 is for the fact that 0 doesn't do this
+        int my_last = my_first + lines_per_proc; //inclusive
+        float initial_x = 0;//all streamlines start at x=0
+        float initial_y = my_first;
+        float time_step = .2;
+        //create string array; store output lines there
+        float* streams = new float[stream_size];//This is where the output will be stored
+        Point current{};
+        current.x_coord = initial_x;
+        current.y_coord = initial_y;
+        for(int lineId = my_first; lineId <= my_last; lineId++)
+        {
+            if(lineId >= data_rows) break; //passed the bottom row
+            for(int step = 0; step < num_steps*3; step++)//each 'step' fills out 3 elements of the array
+            {
+                if(not_in_range(current)) break;//The streamline has left the known vector field. Go to the next line.
+                streams[step] = lineId;
+                streams[++step] = current.x_coord;
+                streams[++step] = current.y_coord;
+                current = rungeKutta(current, time_step);
+            }
+        }
+        MPI_Send(streams, stream_size, MPI_FLOAT, 0, 0, comm);
     }
+
+    if(my_rank == 0)
+    {
+        std::ofstream outFile("streamlines_mpi.csv", std::ios::app);
+	    outFile << "line_id, coordinate_x, coordinate_y" << endl;
+        for(int i = 1; i < comm_sz; i++)
+        {
+	        float *incoming_lines = new float[stream_size];
+            MPI_Recv(incoming_lines, stream_size, MPI_FLOAT, i, 0, comm, MPI_STATUS_IGNORE);
+            //print local streams to file
+            for(int j = 0; j < stream_size; j++)
+                outFile << incoming_lines[j] << ", " << incoming_lines[++j] << ", " << incoming_lines[++j] << endl;
+            delete[] incoming_lines;
+	    cout << "Done with " << i << endl;
+        }
+    }
+
+    MPI_Finalize();
     return 0;
 }
 
@@ -145,11 +136,9 @@ int main() {
  * For integers, this can be directly retrieved from the vector field (no interpolation needed).
  * @param x_coord the x coordinate
  * @param y_coord the y coordinate
- * @param vectors the vector field
  * @return a Vector object
  */
-__device__
-Vector get_v_from_field(int x_coord, int y_coord, Vector* vectors)
+Vector get_v_from_field(int x_coord, int y_coord)
 {
     int index = y_coord*data_cols + x_coord;
     return vectors[index];
@@ -160,11 +149,9 @@ Vector get_v_from_field(int x_coord, int y_coord, Vector* vectors)
  * This method uses Bilinear Interpolation.
  * @param x_coord the x coordinate
  * @param y_coord the y coordinate
- * @param vectors the vector field
  * @return a Vector object
  */
-__device__
-Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
+Vector get_v_from_field(float x_coord, float y_coord)
 {
     //Bilinear Interpolation
     //Get integer points around the given x and y
@@ -175,7 +162,7 @@ Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
 
     if(ceil_x == floor_x && ceil_y == floor_y)//both are integers, no interpolation
     {
-        return get_v_from_field((int)x_coord, (int)y_coord, vectors);
+        return get_v_from_field((int)x_coord, (int)y_coord);
     }
 
     Vector R1{}, R2{};
@@ -197,10 +184,10 @@ Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
     //Neither are integers
     //bilinear interpolation
     //Q11 - bottom left; Q12 - top left; Q21 - bottom right; Q22 - top right
-    Vector Q11 = get_v_from_field(floor_x, floor_y, vectors);
-    Vector Q12 = get_v_from_field(floor_x, ceil_y, vectors);
-    Vector Q21 = get_v_from_field(ceil_x, floor_y, vectors);
-    Vector Q22 = get_v_from_field(ceil_x, ceil_y), vectors;
+    Vector Q11 = get_v_from_field(floor_x, floor_y);
+    Vector Q12 = get_v_from_field(floor_x, ceil_y);
+    Vector Q21 = get_v_from_field(ceil_x, floor_y);
+    Vector Q22 = get_v_from_field(ceil_x, ceil_y);
 
     //Calculate R10
     R1 = interpolate(Q11, Q21, ceil_x, floor_x, x_coord);
@@ -229,7 +216,6 @@ Vector get_v_from_field(float x_coord, float y_coord, Vector* vectors)
  * @param p the desired point
  * @return the vector at the desired point
  */
-__device__
 Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
 {
     Vector temp1 = const_vect_mult((bigP - p) / (bigP - smallP), v1);
@@ -241,13 +227,11 @@ Vector interpolate(Vector v1, Vector v2, int bigP, int smallP, float p)
 /**
  * Wrapper function. Gets the vector associated with a point.
  * @param p the point
- * @param vectors the vector field
  * @return the desired vector
  */
-__device__
-Vector get_v_from_field(Point p, Vector* vectors)
+Vector get_v_from_field(Point p)
 {
-    return get_v_from_field(p.x_coord, p.y_coord, vectors);
+    return get_v_from_field(p.x_coord, p.y_coord);
 }
 
 /**
@@ -256,7 +240,6 @@ Vector get_v_from_field(Point p, Vector* vectors)
  * @param v the vector
  * @return the new vector
  */
-__device__
 Vector const_vect_mult(float c, Vector v)
 {
     Vector returnVector{};
@@ -271,7 +254,6 @@ Vector const_vect_mult(float c, Vector v)
  * @param v2 the second vector
  * @return the sum of the two vectors
  */
-__device__
 Vector add_vectors(Vector v1, Vector v2)
 {
     Vector returnVector{};
@@ -286,7 +268,6 @@ Vector add_vectors(Vector v1, Vector v2)
  * @param v the vector
  * @return the new point
  */
-__device__
 Point add_vector_point(Point p, Vector v)
 {
     Point returnPoint{};
@@ -299,11 +280,9 @@ Point add_vector_point(Point p, Vector v)
  * Do the Runge-Kutta algorithm
  * @param p the starting point
  * @param time_step the time step
- * @param vectors the vector field
  * @return the next point
  */
-__device__
-Point rungeKutta(Point p, float time_step, Vector* vectors)
+Point rungeKutta(Point p, float time_step)
 {
     Vector k1{}, k2{}, k3{}, k4{};
 
@@ -311,15 +290,15 @@ Point rungeKutta(Point p, float time_step, Vector* vectors)
     // to find next value of y
     k1 = const_vect_mult(time_step, get_v_from_field(p));
     Point p1 = add_vector_point(p, const_vect_mult(.5, k1));
-    Vector v_1 = get_v_from_field(p1, vectors);
+    Vector v_1 = get_v_from_field(p1);
 
     k2 = const_vect_mult(time_step, v_1);
     Point p2 = add_vector_point(p, const_vect_mult(.5, k2));
-    Vector v_2 = get_v_from_field(p2, vectors);
+    Vector v_2 = get_v_from_field(p2);
 
     k3 = const_vect_mult(time_step, v_2);
     Point p3 = add_vector_point(p, k3);
-    Vector v_3 = get_v_from_field(p3, vectors);
+    Vector v_3 = get_v_from_field(p3);
 
     k4 = const_vect_mult(time_step, v_3);
     Vector tempSum = k1;
@@ -338,7 +317,6 @@ Point rungeKutta(Point p, float time_step, Vector* vectors)
  * @param p the point
  * @return whether the point is not in the vector field
  */
-__device__
 bool not_in_range(Point p)
 {
     return p.x_coord < 0 || p.x_coord >= data_cols || p.y_coord < 0 || p.y_coord >= data_rows;
@@ -353,7 +331,6 @@ void get_args(int argc, char* argv[])
 {
 
 }
-
 
 
 

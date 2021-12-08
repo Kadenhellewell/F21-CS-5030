@@ -3,4 +3,4 @@ project(project_mpi)
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_executable(project_mpi main.cpp)
+add_executable(project_mpi main_mpi.cpp)
