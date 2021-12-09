@@ -2,6 +2,7 @@
  * Compile: gcc / g++ main_shared.cpp
  * Execute: ./<output file name>
  * (If you have issues with ifstream, I don't know what happened. It wa compiling for a while and then randomly stopped)
+ * Note that your working directory needs to be set to the same directory that the data file is located.
  */
 
 #include <iostream>
