@@ -1,18 +1,18 @@
 /**
+ * Modules: gcc/6 or intel, cuda
  * compile: nvcc main.cu -o cuda_streams
  * Request GPU: salloc -n 1 -N 1 -t 0:15:00 -p notchpeak-shared-short -A notchpeak-shared-short --gres=gpu:k80:1
+ * Execute: srun ./cuda_streams
  */
-
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <cmath>
+#include <chrono>
 
 using namespace std;
-
-
-
+using namespace std::chrono;
 
 //These are separate structs to aid is differentiating points and vectors
 struct Vector{
@@ -50,6 +50,8 @@ const int num_steps = 50;
 const int stream_size = num_steps*data_rows*3;
 const int num_vectors = data_rows * data_cols;
 const int data_size = num_vectors*2;//2 floats per vector
+const int TILE_LENGTH = 100;
+const int lines_per_thread = data_rows / TILE_LENGTH;
 //TODO: define tile size variables (whatever they are)
 
 /**
@@ -65,22 +67,27 @@ void calculate_stream_lines(Vector* vectors, float* streams_d)//streams is the o
     int thread_id = blockIdx.x*blockDim.x + threadIdx.x;//TODO: make sure this is correct for 1D (this is the threadId)
 
     float time_step = .2;
-    int lineId = thread_id;
-    if(lineId >= data_rows) return; //passed the bottom row
-    //initialize the starting point at the beginning of each new line
-    Point current{};
-    current.x_coord = 0;//Each streamline starts at the far left
-    current.y_coord = lineId;
+    int my_first_line = lines_per_thread*thread_id;
+    int my_last_line =  my_first_line + my_last_line - 1;
+    //initialize the starting point for this thread
     int startPoint = 0;
-    if(lineId > 0) //0 is an edge case in this calculation
-        startPoint = lineId*num_steps*3 + 1;
-    for(int step = 0; step < num_steps*3; step++)//each 'step' fills out 3 elements of the array
+    for(int lineId = my_first_line; lineId <= my_last_line; lineId++)
     {
-        if(not_in_range(current)) break;//The streamline has left the known vector field. This thread is done
-        streams_d[startPoint + step] = lineId;
-        streams_d[startPoint + ++step] = current.x_coord;
-        streams_d[startPoint + ++step] = current.y_coord;
-        current = rungeKutta(current, time_step, vectors);
+        if(lineId >= data_rows) return; //passed the bottom row
+
+        Point current{};
+        current.x_coord = 0;//Each streamline starts at the far left
+        current.y_coord = lineId;
+        if(lineId > 0) //0 is an edge case in this calculation
+            startPoint = lineId*num_steps*3 + 1;
+        for(int step = 0; step < num_steps*3; step++)//each 'step' fills out 3 elements of the array
+        {
+            if(not_in_range(current)) break;//The streamline has left the known vector field. This thread is done
+            streams_d[startPoint + step] = lineId;
+            streams_d[startPoint + ++step] = current.x_coord;
+            streams_d[startPoint + ++step] = current.y_coord;
+            current = rungeKutta(current, time_step, vectors);
+        }
     }
 }
 
@@ -89,7 +96,7 @@ int main() {
     Vector* vectors = new Vector[num_vectors];
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
 
-    //Read in from file
+    //Read in vector field from file
     float f;
     int k = 0;
     float * data = new float[data_size];
@@ -108,29 +115,41 @@ int main() {
         vectors[index] = thisVector;
     }
 
-    //Allocate spaced on the GPU for vectors, then copy up
+    //Allocate space on the GPU for vectors, then copy up
     Vector* vectors_d;
-    cudaMalloc(&vectors_d, num_vectors);
-    cudaMemcpy(vectors_d, vectors, num_vectors, cudaMemcpyHostToDevice);
+    cudaMalloc(&vectors_d, num_vectors*sizeof (float)*2);//*2 since a vector has 2 floats
+    cudaMemcpy(vectors_d, vectors, num_vectors*sizeof (float)*2, cudaMemcpyHostToDevice);
     //initialize streams
     float* streams = new float[stream_size];
     for(int i = 0; i < stream_size; i++)
     {
         streams[i] = -1;
     }
-    //allocate space for device results (GPU)
+    //allocate space for device results
     float* streams_d;
-    cudaMalloc(&streams_d, stream_size);
-    cudaMemcpy(streams_d, streams, stream_size, cudaMemcpyHostToDevice);
-    //I think I want 1D blocks, since each streamline starts in the first column. Not sure how to do that.
+    cudaMalloc(&streams_d, stream_size*sizeof (float));
+    cudaMemcpy(streams_d, streams, stream_size*sizeof (float), cudaMemcpyHostToDevice);
+
     //Set grid and block sizes
     dim3 DimGrid(1, 1, 1);// how many blocks
-    dim3 DimBlock(600, 1, 1);// how many threads per block
+    dim3 DimBlock(TILE_LENGTH, 1, 1);// how many threads per block
 
-    calculate_stream_lines<<<DimGrid, DimBlock>>>(vectors_d, streams_d);
+    //Run 10 times, for timing purposes
+    for(int i = 0; i < 10; i++)
+    {
+        auto start = high_resolution_clock::now();
+        calculate_stream_lines<<<DimGrid, DimBlock>>>(vectors_d, streams_d);
+	    cudaDeviceSynchronize();
+        auto stop = high_resolution_clock::now();
+
+        auto duration = duration_cast<milliseconds>(stop - start);
+
+        cout << "Time: " << duration.count() << " ms" << endl;
+    }
+
     //copy results of calculating streams to host
     float* results = new float[stream_size];
-    cudaMemcpy(results, streams_d, stream_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(results, streams_d, stream_size*sizeof (float), cudaMemcpyDeviceToHost);
     std::ofstream outFile("streamlines_cuda.csv", std::ios::app);
     //Parse results, groups of 3, line_id, coordinate_x, coordinate_y
     outFile << "line_id, coordinate_x, coordinate_y" << endl;
@@ -142,6 +161,7 @@ int main() {
     }
     cudaFree(vectors);
     cudaFree(streams_d);
+    delete[] results;
     delete[] streams;
     return 0;
 }
@@ -354,16 +374,6 @@ __device__
 bool not_in_range(Point p)
 {
     return p.x_coord < 0 || p.x_coord >= data_cols || p.y_coord < 0 || p.y_coord >= data_rows;
-}
-
-/**
- * Get input from the user, store, and broadcast
- * @param argc number of arguments
- * @param argv array containing the arguments
- */
-void get_args(int argc, char* argv[])
-{
-
 }
 
 

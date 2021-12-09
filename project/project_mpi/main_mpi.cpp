@@ -1,3 +1,10 @@
+/**
+ * Modules: gcc/6, mpich
+ * Compile: mpic++ -g -Wall -o <output file name> main_mpi.cpp
+ * Execute: mpiexec -n <number of processes> ./<output file name>
+ */
+
+
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -21,8 +28,6 @@ struct Point{
     float y_coord;
 };
 
-void get_args(int argc, char* argv[]);
-
 Vector const_vect_mult(float c, Vector v);
 Vector get_v_from_field(int x_coord, int y_coord);
 Vector get_v_from_field(float x_coord, float y_coord);
@@ -37,21 +42,23 @@ MPI_Comm comm;
 int comm_sz; //Number of Process
 int my_rank; //Rank of current process
 
-int num_steps = 15;
+int num_steps = 100;
 int data_cols = 1300;
 int data_rows = 600;
-int stream_size = num_steps*3;//This size is different as each process has its own, smaller array
+int stream_size;//This size is different from other implementations as each process has its own, smaller array
 int num_vectors = data_rows * data_cols;
 int data_size = num_vectors*2;//2 floats per vector
 Vector* vectors;
 
 int main(int argc, char* argv[])
 {
+    double start, finish;
     MPI_Init(&argc, &argv);
     comm = MPI_COMM_WORLD;
     MPI_Comm_size(comm, &comm_sz);
     MPI_Comm_rank(comm, &my_rank);
     int lines_per_proc = data_rows / (comm_sz - 1);//the -1 is for the fact that 0 doesn't do this
+    stream_size = lines_per_proc*num_steps*3;
     vectors = new Vector[num_vectors];
     float * data = new float[data_size];
     if(my_rank == 0)
@@ -74,6 +81,7 @@ int main(int argc, char* argv[])
             thisVector.y_val = data[++i];
             vectors[index] = thisVector;
         }
+	start = MPI_Wtime();
     }
 
     MPI_Barrier(comm);
@@ -91,7 +99,7 @@ int main(int argc, char* argv[])
         int startPoint = 0;
         for(int lineId = my_first; lineId <= my_last; lineId++)
         {
-            Point current{};
+	        Point current{};
             current.x_coord = 0;
             current.y_coord = lineId;
             if(lineId > my_first)
@@ -110,10 +118,13 @@ int main(int argc, char* argv[])
         //delete[] local_streams;
     }
 
+
     if(my_rank == 0)
     {
-        std::ofstream outFile("streamlines_mpi.csv", std::ios::app);
-	    outFile << "line_id, coordinate_x, coordinate_y" << endl;
+	
+        //std::ofstream outFile("streamlines_mpi.csv", std::ios::app);
+
+	  //  outFile << "line_id, coordinate_x, coordinate_y" << endl;
         for(int i = 1; i < comm_sz; i++)
         {
 	        float *incoming_lines = new float[stream_size];
@@ -124,12 +135,12 @@ int main(int argc, char* argv[])
                     outFile << incoming_lines[j] << ", " << incoming_lines[++j] << ", " << incoming_lines[++j] << endl;
             delete[] incoming_lines;
         }
+	finish = MPI_Wtime();
+	cout << "Time on " << comm_sz << " processes: " << finish - start << " s" << endl;
     }
-
     MPI_Barrier(comm);
     delete[] vectors;
     delete[] data;
-    cout << "I get here " << my_rank << endl;
     MPI_Finalize();
     return 0;
 }
@@ -331,15 +342,6 @@ bool not_in_range(Point p)
     return p.x_coord < 0 || p.x_coord >= data_cols || p.y_coord < 0 || p.y_coord >= data_rows;
 }
 
-/**
- * Get input from the user, store, and broadcast
- * @param argc number of arguments
- * @param argv array containing the arguments
- */
-void get_args(int argc, char* argv[])
-{
-
-}
 
 
 

@@ -1,13 +1,21 @@
+/**
+ * Compile: gcc / g++ main_shared.cpp
+ * Execute: ./<output file name>
+ * (If you have issues with ifstream, I don't know what happened. It wa compiling for a while and then randomly stopped)
+ */
+
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <cmath>
 #include <string>
 #include <thread>
-#include <mutex>
+#include <chrono>
+#include <sstream>
 
 
 using namespace std;
+using namespace std::chrono;
 
 //These are separate structs to aid in differentiating points and vectors
 struct Vector{
@@ -44,7 +52,8 @@ int main()
 {
     int thread_count = 6;
     vectors = new Vector[num_vectors];
-
+    stringstream ss;
+    ss.
     //Read vectors from file
     std::ifstream inFile("cyl2d_1300x600_float32[2].raw", std::ios::binary);
     float f;
@@ -73,7 +82,18 @@ int main()
         streams[i] = -1;
     }
 
-    calculate_streamlines(thread_count, streams);
+    //Run 10 times, for timing purposes
+    for(int i = 0; i < 10; i++)
+    {
+        auto start = high_resolution_clock::now();
+        calculate_streamlines(thread_count, streams);
+        auto stop = high_resolution_clock::now();
+
+        auto duration = duration_cast<milliseconds>(stop - start);
+
+        cout << "Time with " << thread_count << " threads: " << duration.count() << " ms" << endl;
+    }
+
 
     //Write results to file
     std::ofstream outFile("streamlines_shared.csv", std::ios::app);
@@ -104,7 +124,7 @@ void calculate_streamlines(int thread_count, float* streams)
     for(int i = 0; i < thread_count; i++)
     {
         threads[i] = std::thread([i, &lines_per_thread, &streams]{
-            int my_first_line = lines_per_thread * (i); //the -1 is for the fact that 0 doesn't do this
+            int my_first_line = lines_per_thread * (i);
             int my_last_line = my_first_line + lines_per_thread - 1;
             float time_step = .2;
             int startPoint = 0;
@@ -333,16 +353,6 @@ Point rungeKutta(Point p, float time_step)
 bool not_in_range(Point p)
 {
     return p.x_coord < 0 || p.x_coord >= data_cols || p.y_coord < 0 || p.y_coord >= data_rows;
-}
-
-/**
- * Get input from the user, store, and broadcast
- * @param argc number of arguments
- * @param argv array containing the arguments
- */
-void get_args(int argc, char* argv[])
-{
-
 }
 
 
